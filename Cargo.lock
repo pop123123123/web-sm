@@ -1956,10 +1956,12 @@ dependencies = [
  "actix-rt",
  "actix-web",
  "cargo-husky",
+ "cfg-if 1.0.0",
  "chashmap",
  "futures",
  "rand 0.8.4",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
