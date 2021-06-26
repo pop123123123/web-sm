@@ -10,14 +10,51 @@ pub struct Phonem {
     pub end: f64,
 }
 
+pub type Seed = String;
 pub type Combo = Vec<Phonem>;
 pub type AnalysisResult = Vec<Combo>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Project {
-    pub seed: String,
+    pub seed: Seed,
     pub video_urls: Vec<String>,
     pub name: String,
+    pub segments: Vec<Segment>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Segment {
+    #[serde(rename = "s")]
+    pub sentence: String,
+    #[serde(rename = "i")]
+    pub combo_index: u16,
+}
+
+impl Segment {
+    pub fn new(sentence: &str) -> Self {
+        Segment {
+            sentence: sentence.to_owned(),
+            combo_index: 0,
+        }
+    }
+}
+
+fn transform_url(url: &str) -> &str {
+    url
+}
+
+impl Project {
+    pub fn new(name: &str, seed: &str, video_urls: &[String]) -> Self {
+        Project {
+            name: name.to_owned(),
+            seed: seed.to_owned(),
+            video_urls: video_urls
+                .iter()
+                .map(|u| transform_url(u).to_owned())
+                .collect(),
+            segments: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

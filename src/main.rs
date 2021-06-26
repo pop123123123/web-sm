@@ -9,11 +9,7 @@ const INDEX_PATH: &str = "./front/dist/index.html";
 
 #[get("/test")]
 async fn test() -> impl Responder {
-    let p = data::Project {
-        seed: "4".to_string(),
-        video_urls: vec!["_ZZ8oyZUGn8".to_string()],
-        name: "lol".to_string(),
-    };
+    let p = data::Project::new("lol", "4", &["_ZZ8oyZUGn8".to_string()]);
     let res = sm::analyze(&p, "1 2").await;
     match res {
         Ok(analysis_results) => HttpResponse::Ok().json(&analysis_results),
