@@ -1,9 +1,14 @@
+use actix::*;
 use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
 
 mod data;
 mod renderer;
+mod error;
+mod messages;
 mod sm;
+mod sm_actor;
+mod socket;
 
 const FRONTEND_PATH: &str = "./front/dist/";
 const INDEX_PATH: &str = "./front/dist/index.html";
@@ -31,11 +36,15 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or_else(|_| "3333".to_string())
         .parse()
         .expect("PORT must be a number");
+    // Start chat server actor
+    let server = sm_actor::SmActor::new().start();
 
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Compress::default())
+            .data(server.clone())
             .service(test)
+            .service(actix_web::web::resource("/ws/").to(socket::sm_route))
             .service(
                 Files::new("/", FRONTEND_PATH)
                     .index_file("index.html")

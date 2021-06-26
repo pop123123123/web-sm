@@ -25,12 +25,13 @@ impl std::hash::Hash for Phonem {
     }
 }
 
+pub type ProjectId = String;
 pub type Seed = String;
 pub type Combo = Vec<Phonem>;
 pub type AnalysisResult = Vec<Combo>;
 
 #[serde(transparent)]
-#[derive(Debug, Serialize, Deserialize, Hash)]
+#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
 pub struct Video {
     pub url: String,
 }
@@ -53,15 +54,15 @@ impl Video {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub struct Project {
     pub seed: Seed,
     pub video_urls: Vec<Video>,
-    pub name: String,
+    pub name: ProjectId,
     pub segments: Vec<Segment>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Segment {
     #[serde(rename = "s")]
     pub sentence: String,
