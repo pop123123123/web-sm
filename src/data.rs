@@ -57,6 +57,28 @@ impl Project {
     }
 }
 
+
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct AnalysisId (Seed, String, String);
+impl AnalysisId {
+    pub fn from_project_sentence(project: &Project, sentence: &str) -> AnalysisId {
+        AnalysisId (
+            project.seed.clone(),
+            project.video_urls.join(""),
+            sentence.to_owned(),
+        )
+    }
+}
+
+
+impl std::hash::Hash for Project {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.seed.hash(state);
+        self.video_urls.hash(state);
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AmbiguityError {
     pub word: String,

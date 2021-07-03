@@ -12,7 +12,7 @@ async fn test() -> impl Responder {
     let p = data::Project::new("lol", "4", &["_ZZ8oyZUGn8".to_string()]);
     let res = sm::analyze(&p, "1 2").await;
     match res {
-        Ok(analysis_results) => HttpResponse::Ok().json(&analysis_results),
+        Ok(analysis_results) => HttpResponse::Ok().json(&*analysis_results),
         Err(e) => HttpResponse::BadRequest().json(&e),
     }
 }
