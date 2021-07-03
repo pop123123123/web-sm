@@ -10,7 +10,7 @@ pub struct Phonem {
     pub end: f64,
 }
 
-pub type ProjectID = String;
+pub type ProjectId = String;
 pub type Seed = String;
 pub type Combo = Vec<Phonem>;
 pub type AnalysisResult = Vec<Combo>;
@@ -19,7 +19,7 @@ pub type AnalysisResult = Vec<Combo>;
 pub struct Project {
     pub seed: Seed,
     pub video_urls: Vec<String>,
-    pub name: ProjectID,
+    pub name: ProjectId,
     pub segments: Vec<Segment>,
 }
 

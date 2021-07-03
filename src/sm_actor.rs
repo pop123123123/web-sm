@@ -1,17 +1,11 @@
-use crate::data::{Project, ProjectID, Seed, Segment};
+use crate::data::{Project, ProjectId, Seed, Segment};
+use crate::error::*;
 use actix::*;
 use rand::{self, rngs::ThreadRng, Rng};
 use std::collections::{HashMap, HashSet};
 
-pub enum ServerError {
-    ProjectDoesNotExist,
-    ProjectAlreadyExists,
-    SegmentOutOfBounds,
-    UserAlreadyoinedProject,
-}
-
-pub type SessionID = usize;
-pub type ClientID = usize;
+pub type SessionId = usize;
+pub type ClientId = usize;
 
 /// Chat server sends this messages to session
 #[derive(Message)]
@@ -29,7 +23,7 @@ pub struct Connect {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
-    pub id: ClientID,
+    pub id: ClientId,
 }
 
 /// List of available rooms
@@ -39,29 +33,38 @@ impl actix::Message for ListProjects {
 }
 
 /// Create project and join it
-#[derive(Message)]
-#[rtype(result = "()")]
 pub struct CreateProject {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
     pub seed: Seed,
     pub urls: Vec<String>,
+}
+impl actix::Message for CreateProject {
+    type Result = Result<(), ServerError>;
+}
+
+/// Delete project and kick all clients who joined it
+pub struct DeleteProject {
+    pub project_name: ProjectId,
+}
+impl actix::Message for DeleteProject {
+    type Result = Result<(), ServerError>;
 }
 
 /// Join project
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct JoinProject {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
 }
 
 /// Create a segment
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct CreateSegment {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
     pub segment_sentence: String,
     pub position: u16,
 }
@@ -70,8 +73,8 @@ pub struct CreateSegment {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct ModifySegmentSentence {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
     pub segment_position: u16,
     pub new_sentence: String,
 }
@@ -80,8 +83,8 @@ pub struct ModifySegmentSentence {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct ModifySegmentComboIndex {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
     pub segment_position: u16,
     pub new_combo_index: u16,
 }
@@ -90,15 +93,15 @@ pub struct ModifySegmentComboIndex {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct RemoveSegment {
-    pub id: ClientID,
-    pub project_name: ProjectID,
+    pub id: ClientId,
+    pub project_name: ProjectId,
     pub segment_position: u16,
 }
 
 pub struct SmActor {
-    sessions: HashMap<SessionID, Recipient<SmMessage>>,
-    projects: HashMap<ProjectID, Box<Project>>,
-    editing_sessions: HashMap<ProjectID, HashSet<ClientID>>,
+    sessions: HashMap<SessionId, Recipient<SmMessage>>,
+    projects: HashMap<ProjectId, Box<Project>>,
+    editing_sessions: HashMap<ProjectId, HashSet<ClientId>>,
     rng: ThreadRng,
 }
 
@@ -116,7 +119,7 @@ impl SmActor {
 impl SmActor {
     fn create_project(
         &mut self,
-        project_name: ProjectID,
+        project_name: ProjectId,
         seed: Seed,
         video_urls: &[String],
     ) -> Result<Box<Project>, ServerError> {
@@ -129,11 +132,20 @@ impl SmActor {
 
         Ok(project)
     }
+    fn delete_project(&mut self, project_name: ProjectId) -> Result<(), ServerError> {
+        if !self.projects.contains_key(&project_name) {
+            return Err(ServerError::ProjectDoesNotExist);
+        }
+        // TODO: notify connected users
+
+        self.projects.remove(&project_name);
+        Ok(())
+    }
 
     fn user_join_project(
         &mut self,
-        project_name: ProjectID,
-        user: ClientID,
+        project_name: ProjectId,
+        user: ClientId,
     ) -> Result<(), ServerError> {
         let users_result = self.editing_sessions.get_mut(&project_name);
 
@@ -142,7 +154,7 @@ impl SmActor {
                 // User already on the project
                 // Add new user to the has set
                 if users.iter().any(|id| *id == user) {
-                    return Err(ServerError::UserAlreadyoinedProject);
+                    return Err(ServerError::UserAlreadyJoinedProject);
                 }
                 users.insert(user);
                 Ok(())
@@ -160,7 +172,7 @@ impl SmActor {
 
     fn add_segment(
         &mut self,
-        project_name: ProjectID,
+        project_name: ProjectId,
         position: u16,
         sentence: String,
     ) -> Result<(), ServerError> {
@@ -184,7 +196,7 @@ impl SmActor {
 
     fn modify_segment_sentence(
         &mut self,
-        project_name: ProjectID,
+        project_name: ProjectId,
         segment_position: u16,
         sentence: String,
     ) -> Result<(), ServerError> {
@@ -203,7 +215,7 @@ impl SmActor {
 
     fn modify_segment_combo_index(
         &mut self,
-        project_name: ProjectID,
+        project_name: ProjectId,
         segment_position: u16,
         index: u16,
     ) -> Result<(), ServerError> {
@@ -222,7 +234,7 @@ impl SmActor {
 
     fn remove_segment(
         &mut self,
-        project_name: ProjectID,
+        project_name: ProjectId,
         segment_position: u16,
     ) -> Result<(), ServerError> {
         let project = match self.projects.get_mut(&project_name) {
@@ -252,7 +264,7 @@ impl Handler<Connect> for SmActor {
         println!("Someone joined");
 
         // register session with random id
-        let id = self.rng.gen::<SessionID>();
+        let id = self.rng.gen::<SessionId>();
         self.sessions.insert(id, msg.addr);
 
         // send id back
@@ -269,7 +281,7 @@ impl Handler<Disconnect> for SmActor {
         self.editing_sessions.values_mut().for_each(|s| {
             s.remove(&msg.id);
         });
-
+        // TODO: alert other clients
         // TODO: free projects that are not edited anymore by anybody
     }
 }
@@ -286,26 +298,34 @@ impl Handler<ListProjects> for SmActor {
 
 // Creates a project and joins it automatically
 impl Handler<CreateProject> for SmActor {
-    type Result = ();
+    type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: CreateProject, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: CreateProject, _: &mut Context<Self>) -> Self::Result {
         let CreateProject {
-            id,
+            id: _,
             project_name,
             seed,
             urls,
         } = msg;
 
-        if self
-            .create_project(project_name.clone(), seed, &urls)
-            .is_err()
-        {
-            todo!("Return error to socket");
-        }
+        println!("creates new project");
 
-        if self.user_join_project(project_name, id).is_err() {
-            todo!("Return error to socket");
-        }
+        self.create_project(project_name, seed, &urls).map(|_| ())
+
+        // if self.user_join_project(project_name, id).is_err() {
+        //     todo!("Return error to socket");
+        // }
+    }
+}
+
+// Creates a project and joins it automatically
+impl Handler<DeleteProject> for SmActor {
+    type Result = Result<(), ServerError>;
+
+    fn handle(&mut self, msg: DeleteProject, _: &mut Context<Self>) -> Self::Result {
+        let DeleteProject { project_name } = msg;
+
+        self.delete_project(project_name)
     }
 }
 
