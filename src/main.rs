@@ -1,7 +1,9 @@
 use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
 
-mod actor;
+
+mod sm_actor;
+mod socket;
 mod data;
 mod sm;
 

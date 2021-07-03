@@ -95,8 +95,6 @@ pub struct RemoveSegment {
     pub segment_position: u16,
 }
 
-/// `ChatServer` manages chat rooms and responsible for coordinating chat
-/// session. implementation is super primitive
 pub struct SmActor {
     sessions: HashMap<SessionID, Recipient<SmMessage>>,
     projects: HashMap<ProjectID, Box<Project>>,
