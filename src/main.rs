@@ -2,6 +2,7 @@ use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
 
 mod data;
+mod renderer;
 mod sm;
 
 const FRONTEND_PATH: &str = "./front/dist/";
@@ -12,7 +13,13 @@ async fn test() -> impl Responder {
     let p = data::Project::new("lol", "4", &["_ZZ8oyZUGn8".to_string()]);
     let res = sm::analyze(&p, "1 2").await;
     match res {
-        Ok(analysis_results) => HttpResponse::Ok().json(&*analysis_results),
+        Ok(analysis_results) => {
+            let phs = &analysis_results[0];
+            // let res = crate::renderer::render(&p.video_urls, phs);
+            let res = crate::renderer::preview(&p.video_urls, phs);
+            res.unwrap();
+            HttpResponse::Ok().json(&*analysis_results)
+        }
         Err(e) => HttpResponse::BadRequest().json(&e),
     }
 }
