@@ -69,6 +69,24 @@ impl Actor for WsSmSession {
     }
 }
 
+macro_rules! transfer_id {
+    ($sel: ident, $ctx: ident, $a: expr, $stru: ident) => {
+        transfer!($sel, $ctx, sm_actor::$stru { id: $sel.id, ..$a });
+    };
+}
+macro_rules! transfer {
+    ($sel: ident, $ctx: ident, $expr_req: expr) => {
+        $sel.addr
+            .send($expr_req)
+            .into_actor($sel)
+            .then(|res, _, ctx| {
+                ctx.text(serde_json::to_string(&res.unwrap()).unwrap());
+                fut::ready(())
+            })
+            .wait($ctx)
+    };
+}
+
 //WebSocket message handler
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSmSession {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
@@ -91,46 +109,23 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSmSession {
                 self.hb = Instant::now();
             }
             ws::Message::Text(text) => match serde_json::from_str(&text) {
-                Ok(ClientRequest::ListProjects) => {
-                    self.addr
-                        .send(sm_actor::ListProjects)
-                        .into_actor(self)
-                        .then(|res, _, ctx| {
-                            ctx.text(serde_json::to_string(&res.unwrap()).unwrap());
-                            fut::ready(())
-                        })
-                        .wait(ctx);
+                Ok(ClientRequest::ListProjects(req)) => transfer!(self, ctx, req),
+                Ok(ClientRequest::DeleteProject(req)) => transfer!(self, ctx, req),
+                Ok(ClientRequest::CreateProject(req)) => {
+                    transfer_id!(self, ctx, req, CreateProject)
                 }
-                Ok(ClientRequest::CreateProject {
-                    project_name,
-                    seed,
-                    urls,
-                }) => {
-                    let req = sm_actor::CreateProject {
-                        id: self.id,
-                        seed,
-                        project_name,
-                        urls,
-                    };
-                    self.addr
-                        .send(req)
-                        .into_actor(self)
-                        .then(|res, _, ctx| {
-                            ctx.text(serde_json::to_string(&res.unwrap()).unwrap());
-                            fut::ready(())
-                        })
-                        .wait(ctx);
+                Ok(ClientRequest::JoinProject(req)) => transfer_id!(self, ctx, req, JoinProject),
+                Ok(ClientRequest::CreateSegment(req)) => {
+                    transfer_id!(self, ctx, req, CreateSegment)
                 }
-                Ok(ClientRequest::DeleteProject { project_name }) => {
-                    let req = sm_actor::DeleteProject { project_name };
-                    self.addr
-                        .send(req)
-                        .into_actor(self)
-                        .then(|res, _, ctx| {
-                            ctx.text(serde_json::to_string(&res.unwrap()).unwrap());
-                            fut::ready(())
-                        })
-                        .wait(ctx);
+                Ok(ClientRequest::ModifySegmentSentence(req)) => {
+                    transfer_id!(self, ctx, req, ModifySegmentSentence)
+                }
+                Ok(ClientRequest::ModifySegmentComboIndex(req)) => {
+                    transfer_id!(self, ctx, req, ModifySegmentComboIndex)
+                }
+                Ok(ClientRequest::RemoveSegment(req)) => {
+                    transfer_id!(self, ctx, req, RemoveSegment)
                 }
                 _ => {
                     println!("unrecognized request")

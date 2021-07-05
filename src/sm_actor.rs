@@ -2,6 +2,7 @@ use crate::data::{Project, ProjectId, Seed, Segment};
 use crate::error::*;
 use actix::*;
 use rand::{self, rngs::ThreadRng, Rng};
+use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 pub type SessionId = usize;
@@ -20,20 +21,24 @@ pub struct Connect {
 }
 
 /// Session is disconnected
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct Disconnect {
+    #[serde(skip)]
     pub id: ClientId,
 }
 
 /// List of available rooms
+#[derive(Deserialize)]
 pub struct ListProjects;
 impl actix::Message for ListProjects {
     type Result = Vec<Project>;
 }
 
 /// Create project and join it
+#[derive(Deserialize)]
 pub struct CreateProject {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
     pub seed: Seed,
@@ -44,6 +49,7 @@ impl actix::Message for CreateProject {
 }
 
 /// Delete project and kick all clients who joined it
+#[derive(Deserialize)]
 pub struct DeleteProject {
     pub project_name: ProjectId,
 }
@@ -52,17 +58,19 @@ impl actix::Message for DeleteProject {
 }
 
 /// Join project
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct JoinProject {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
 }
 
 /// Create a segment
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct CreateSegment {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
     pub segment_sentence: String,
@@ -70,9 +78,10 @@ pub struct CreateSegment {
 }
 
 /// Modify a segment's sentence
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct ModifySegmentSentence {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
     pub segment_position: u16,
@@ -80,9 +89,10 @@ pub struct ModifySegmentSentence {
 }
 
 /// Modify a segment's combo index
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct ModifySegmentComboIndex {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
     pub segment_position: u16,
@@ -90,9 +100,10 @@ pub struct ModifySegmentComboIndex {
 }
 
 /// Remove a segment
-#[derive(Message)]
+#[derive(Message, Deserialize)]
 #[rtype(result = "()")]
 pub struct RemoveSegment {
+    #[serde(skip)]
     pub id: ClientId,
     pub project_name: ProjectId,
     pub segment_position: u16,

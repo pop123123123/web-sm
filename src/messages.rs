@@ -1,16 +1,15 @@
 use serde::Deserialize;
 
-use crate::data::{ProjectId, Seed};
+use crate::sm_actor;
 
 #[derive(Deserialize)]
 pub enum ClientRequest {
-    ListProjects,
-    CreateProject {
-        project_name: ProjectId,
-        seed: Seed,
-        urls: Vec<String>,
-    },
-    DeleteProject {
-        project_name: ProjectId,
-    },
+    ListProjects(sm_actor::ListProjects),
+    CreateProject(sm_actor::CreateProject),
+    DeleteProject(sm_actor::DeleteProject),
+    JoinProject(sm_actor::JoinProject),
+    CreateSegment(sm_actor::CreateSegment),
+    ModifySegmentSentence(sm_actor::ModifySegmentSentence),
+    ModifySegmentComboIndex(sm_actor::ModifySegmentComboIndex),
+    RemoveSegment(sm_actor::RemoveSegment),
 }
