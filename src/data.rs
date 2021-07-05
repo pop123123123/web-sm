@@ -54,12 +54,18 @@ impl Video {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq)]
 pub struct Project {
     pub seed: Seed,
     pub video_urls: Vec<Video>,
     pub name: ProjectId,
     pub segments: Vec<Segment>,
+}
+
+impl PartialEq for Project {
+    fn eq(&self, other: &Self) -> bool {
+        self.seed == other.seed && self.video_urls == other.video_urls
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]

@@ -3,9 +3,9 @@ use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
 
 mod data;
-mod renderer;
 mod error;
 mod messages;
+mod renderer;
 mod sm;
 mod sm_actor;
 mod socket;
