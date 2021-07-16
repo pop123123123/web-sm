@@ -12,6 +12,7 @@ pub enum ServerError {
     EmptyUrls,
     SegmentOutOfBounds,
     UserAlreadyJoinedProject,
+    CommunicationError,
 }
 
 // impl std::error::Error for ServerError {}

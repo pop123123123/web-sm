@@ -1,4 +1,5 @@
-use serde::Deserialize;
+use crate::data::{ProjectId, Seed, Segment, Video};
+use serde::{Deserialize, Serialize};
 
 use crate::sm_actor;
 
@@ -12,4 +13,42 @@ pub enum ClientRequest {
     ModifySegmentSentence(sm_actor::ModifySegmentSentence),
     ModifySegmentComboIndex(sm_actor::ModifySegmentComboIndex),
     RemoveSegment(sm_actor::RemoveSegment),
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ServerRequest {
+    UserJoinedProject {
+        user: usize,
+    },
+    UserLeftProject {
+        user: usize,
+    },
+    #[serde(rename_all = "camelCase")]
+    ChangeProject {
+        seed: Seed,
+        video_urls: Vec<Video>,
+        name: ProjectId,
+        segments: Vec<Segment>,
+    },
+    #[serde(rename_all = "camelCase")]
+    ChangeProjectName {
+        new_name: ProjectId,
+    },
+    NewSegment {
+        segment: Segment,
+        row: usize,
+    },
+    RemoveSegment {
+        row: usize,
+    },
+    #[serde(rename_all = "camelCase")]
+    ChangeComboIndex {
+        row: usize,
+        combo_index: u16,
+    },
+    ChangeSentence {
+        row: usize,
+        sentence: String,
+    },
 }

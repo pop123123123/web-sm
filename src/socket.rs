@@ -160,7 +160,9 @@ impl WsSmSession {
 impl Handler<sm_actor::SmMessage> for WsSmSession {
     type Result = ();
 
-    fn handle(&mut self, _msg: sm_actor::SmMessage, _: &mut Self::Context) -> Self::Result {}
+    fn handle(&mut self, msg: sm_actor::SmMessage, ctx: &mut Self::Context) -> Self::Result {
+        ctx.text(msg.0);
+    }
 }
 
 impl Handler<sm_actor::Connect> for WsSmSession {
