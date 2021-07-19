@@ -1,4 +1,4 @@
-use crate::data::{ProjectId, Seed, Segment, Video};
+use crate::data::{Project, ProjectId, Seed, Segment, Video};
 use serde::{Deserialize, Serialize};
 
 use crate::sm_actor;
@@ -50,5 +50,8 @@ pub enum ServerRequest {
     ChangeSentence {
         row: usize,
         sentence: String,
+    },
+    ChangeListProjects {
+        projects: Vec<Project>,
     },
 }

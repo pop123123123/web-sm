@@ -40,7 +40,7 @@ pub struct Disconnect {
 #[derive(Deserialize)]
 pub struct ListProjects;
 impl actix::Message for ListProjects {
-    type Result = Vec<Project>;
+    type Result = ServerRequest;
 }
 
 /// Create project and join it
@@ -387,8 +387,9 @@ impl Handler<ListProjects> for SmActor {
     type Result = MessageResult<ListProjects>;
 
     fn handle(&mut self, _: ListProjects, _: &mut Context<Self>) -> Self::Result {
-        let projects = self.projects.values().map(|p| (**p).clone()).collect();
-        MessageResult(projects)
+        let projects: Vec<_> = self.projects.values().map(|p| (**p).clone()).collect();
+
+        MessageResult(ServerRequest::ChangeListProjects { projects })
     }
 }
 
