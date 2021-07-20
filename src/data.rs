@@ -55,10 +55,12 @@ impl Video {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct Project {
     pub seed: Seed,
     pub video_urls: Vec<Video>,
     pub name: ProjectId,
+    #[serde(skip_serializing)]
     pub segments: Vec<Segment>,
 }
 

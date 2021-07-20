@@ -146,7 +146,7 @@ impl SmActor {
 }
 
 impl SmActor {
-    fn broadcast_except(
+    fn broadcast_project_except(
         &self,
         project_name: &str,
         user: usize,
@@ -161,10 +161,21 @@ impl SmActor {
             });
         Ok(())
     }
-    fn broadcast(&self, project_name: &str, request: &ServerRequest) -> Result<(), ServerError> {
+    fn broadcast_project(
+        &self,
+        project_name: &str,
+        request: &ServerRequest,
+    ) -> Result<(), ServerError> {
         let m = SmMessage::from(request);
         self.editing_sessions[project_name].iter().for_each(|id| {
             self.sessions[id].do_send(m.clone());
+        });
+        Ok(())
+    }
+    fn broadcast(&self, request: &ServerRequest) -> Result<(), ServerError> {
+        let m = SmMessage::from(request);
+        self.sessions.values().for_each(|recipient| {
+            recipient.do_send(m.clone());
         });
         Ok(())
     }
@@ -189,16 +200,20 @@ impl SmActor {
         self.projects.insert(project_name.clone(), project.clone());
         self.editing_sessions.insert(project_name, HashSet::new());
 
+        self.broadcast(&ServerRequest::NewProject {
+            project: (*project.clone()),
+        })
+        .ok();
         Ok(project)
     }
     fn delete_project(&mut self, project_name: ProjectId) -> Result<(), ServerError> {
         if !self.projects.contains_key(&project_name) {
             return Err(ServerError::ProjectDoesNotExist);
         }
-        // TODO: notify connected users
 
         self.projects.remove(&project_name);
-        Ok(())
+
+        self.broadcast(&ServerRequest::RemoveProject { name: project_name })
     }
 
     fn user_join_project(
@@ -232,7 +247,7 @@ impl SmActor {
         self.send(user, &r).ok();
 
         let r = ServerRequest::UserJoinedProject { user };
-        self.broadcast_except(&project_name, user, &r)
+        self.broadcast_project_except(&project_name, user, &r)
     }
 
     fn add_segment(
@@ -259,7 +274,7 @@ impl SmActor {
             segment,
             row: position as usize,
         };
-        self.broadcast(&project_name, &r)
+        self.broadcast_project(&project_name, &r)
     }
 
     fn modify_segment_sentence(
@@ -283,7 +298,7 @@ impl SmActor {
             row: segment_position as usize,
             sentence,
         };
-        self.broadcast(&project_name, &r)
+        self.broadcast_project(&project_name, &r)
     }
 
     fn modify_segment_combo_index(
@@ -307,7 +322,7 @@ impl SmActor {
             row: segment_position as usize,
             combo_index: index,
         };
-        self.broadcast(&project_name, &r)
+        self.broadcast_project(&project_name, &r)
     }
 
     fn remove_segment(
@@ -329,7 +344,7 @@ impl SmActor {
         let r = ServerRequest::RemoveSegment {
             row: segment_position as usize,
         };
-        self.broadcast(&project_name, &r)
+        self.broadcast_project(&project_name, &r)
     }
 }
 

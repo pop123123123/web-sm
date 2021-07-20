@@ -35,6 +35,13 @@ pub enum ServerRequest {
     ChangeProjectName {
         new_name: ProjectId,
     },
+    NewProject {
+        #[serde(flatten)]
+        project: Project,
+    },
+    RemoveProject {
+        name: ProjectId,
+    },
     NewSegment {
         segment: Segment,
         row: usize,
