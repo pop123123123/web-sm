@@ -373,7 +373,8 @@ impl Handler<Disconnect> for SmActor {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        let m = SmMessage(format!("{} disconnected", &msg.id));
+        let r = ServerRequest::UserLeftProject { user: msg.id };
+        let m = SmMessage::from(&r);
         // Removing client from all subscribed sessions
         let rooms: Vec<_> = self
             .editing_sessions
@@ -391,7 +392,6 @@ impl Handler<Disconnect> for SmActor {
                 self.sessions[&id].do_send(m.clone()).ok();
             });
         self.sessions.remove(&msg.id);
-        // TODO: notify other users that this one left
 
         // TODO: free projects that are not edited anymore by anybody
     }
