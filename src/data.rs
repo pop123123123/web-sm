@@ -30,8 +30,8 @@ pub type Seed = String;
 pub type Combo = Vec<Phonem>;
 pub type AnalysisResult = Vec<Combo>;
 
-#[serde(transparent)]
 #[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
+#[serde(transparent)]
 pub struct Video {
     pub url: String,
 }

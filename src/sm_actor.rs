@@ -9,6 +9,8 @@ use std::collections::{HashMap, HashSet};
 pub type SessionId = usize;
 pub type ClientId = usize;
 
+use crate::sm;
+
 /// Chat server sends this messages to session
 #[derive(Message, Clone)]
 #[rtype(result = "()")]
@@ -282,7 +284,7 @@ impl SmActor {
         project_name: ProjectId,
         segment_position: u16,
         sentence: String,
-    ) -> Result<(), ServerError> {
+    ) -> Result<ServerRequest, ServerError> {
         let project = match self.projects.get_mut(&project_name) {
             Some(p) => p,
             None => return Err(ServerError::ProjectDoesNotExist),
@@ -298,7 +300,8 @@ impl SmActor {
             row: segment_position as usize,
             sentence,
         };
-        self.broadcast_project(&project_name, &r)
+
+        Ok(r)
     }
 
     fn modify_segment_combo_index(
@@ -471,7 +474,7 @@ impl Handler<CreateSegment> for SmActor {
 impl Handler<ModifySegmentSentence> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: ModifySegmentSentence, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: ModifySegmentSentence, ctx: &mut Context<Self>) -> Self::Result {
         let ModifySegmentSentence {
             project_name,
             segment_position,
@@ -479,8 +482,51 @@ impl Handler<ModifySegmentSentence> for SmActor {
             ..
         } = msg;
 
-        self.modify_segment_sentence(project_name, segment_position, new_sentence)
+        // Retrieve a server request
+        let request = match self.modify_segment_sentence(
+            project_name.clone(),
+            segment_position,
+            new_sentence.clone(),
+        ) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        // Get the list of the sessions linked to the project
+        let recipients = self.editing_sessions[&project_name]
+            .iter()
+            .map(|id| self.sessions[id].clone())
+            .collect();
+
+        // Send the notification to all involved sessions
+        let fut = async {
+            broadcast(request, recipients).await;
+        };
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        // Launch the analyze
+        let project = (**self.projects.get(&project_name).unwrap()).clone();
+        let fut = async move {
+            sm::analyze(&project, &new_sentence).await;
+            // TODO: run n first previews
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
+}
+
+// Async function used to send a server request to a list of recipients
+async fn broadcast(request: ServerRequest, recipients: Vec<Recipient<SmMessage>>) {
+    let m = SmMessage::from(&request);
+    let future_send = recipients.iter().map(|recipient| {
+        //TODO: check send Result
+        recipient.send(m.clone())
+    });
+    futures::future::join_all(future_send).await;
 }
 
 // Modifies segment combo index
