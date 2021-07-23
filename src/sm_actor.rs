@@ -11,20 +11,16 @@ pub type ClientId = usize;
 
 use crate::sm;
 
-macro_rules! clone_project{
-    ($self:expr, $project_name:expr)=>{
-        {
-            (**$self.projects.get(&$project_name).unwrap()).clone()
-        }
-    }
+macro_rules! clone_project {
+    ($self:expr, $project_name:expr) => {{
+        (**$self.projects.get(&$project_name).unwrap()).clone()
+    }};
 }
 
-macro_rules! clone_segment{
-    ($self:expr, $project_name:expr, $position:expr)=>{
-        {
-            $self.projects[&$project_name].segments[$position as usize].clone()
-        }
-    }
+macro_rules! clone_segment {
+    ($self:expr, $project_name:expr, $position:expr) => {{
+        $self.projects[&$project_name].segments[$position as usize].clone()
+    }};
 }
 
 /// Chat server sends this messages to session
@@ -182,9 +178,9 @@ impl SmActor {
     fn get_all_cloned_recipients_project(&self, project_name: &str) -> Vec<Recipient<SmMessage>> {
         // Get the list of the sessions linked to the project
         let recipients: Vec<_> = self.editing_sessions[project_name]
-        .iter()
-        .map(|id| self.sessions[id].clone())
-        .collect();
+            .iter()
+            .map(|id| self.sessions[id].clone())
+            .collect();
 
         recipients
     }
@@ -200,7 +196,7 @@ impl SmActor {
             .map(|id| self.sessions[id].clone())
             .collect();
 
-            recipients
+        recipients
     }
 
     fn create_project(
@@ -226,9 +222,7 @@ impl SmActor {
 
         self.projects.remove(&project_name);
 
-        let r = ServerRequest::RemoveProject {
-            name: project_name,
-        };
+        let r = ServerRequest::RemoveProject { name: project_name };
 
         Ok(r)
     }
@@ -237,7 +231,7 @@ impl SmActor {
         &mut self,
         project_name: ProjectId,
         user: ClientId,
-    ) -> Result<(ServerRequest, ServerRequest), ServerError> {
+    ) -> Result<(ServerRequest, ServerRequest, ServerRequest), ServerError> {
         let users = &self.editing_sessions[&project_name];
         if users.contains(&user) {
             return Err(ServerError::UserAlreadyJoinedProject);
@@ -247,11 +241,10 @@ impl SmActor {
             .editing_sessions
             .get_mut(&project_name)
             .expect("Inconsistent sessions/data");
-        let r = ServerRequest::JoinedUsers {
-            users: users.iter().map(|u| *u).collect(),
+        let request_joined_users = ServerRequest::JoinedUsers {
+            users: users.iter().copied().collect(),
         };
         users.insert(user);
-        self.send(user, &r).ok();
 
         let Project {
             seed,
@@ -267,7 +260,11 @@ impl SmActor {
         };
         let request_notify_join = ServerRequest::UserJoinedProject { user };
 
-        Ok((request_user_change_server, request_notify_join))
+        Ok((
+            request_joined_users,
+            request_user_change_server,
+            request_notify_join,
+        ))
     }
 
     fn add_segment(
@@ -404,7 +401,7 @@ impl Handler<Disconnect> for SmActor {
             })
             .collect();
 
-        let recipients : Vec<_> = rooms
+        let recipients: Vec<_> = rooms
             .iter()
             .fold(HashSet::new(), |acc, hs| acc.union(hs).cloned().collect())
             .iter()
@@ -458,17 +455,26 @@ impl Handler<CreateProject> for SmActor {
         };
 
         // Adding user to it
-        let (request_user_change_server, request_notify_join) = self.user_join_project(project_name.clone(), id)?;
+        let (request_joined_users, request_user_change_server, request_notify_join) =
+            self.user_join_project(project_name.clone(), id)?;
 
         let user_recipient_clone = self.sessions[&id].clone();
-        let all_recipients_except = self.get_all_cloned_recipients_project_except(&project_name, id);
+        let all_recipients_except =
+            self.get_all_cloned_recipients_project_except(&project_name, id);
 
         let fut = async move {
             // Notify all users that a project have been created
             broadcast(new_project_request, &all_recipients).await;
 
             // Adding user to the project and notify all the other users on the project
-            user_join_project_async(request_user_change_server, request_notify_join, user_recipient_clone, all_recipients_except).await;
+            user_join_project_async(
+                request_joined_users,
+                request_user_change_server,
+                request_notify_join,
+                user_recipient_clone,
+                all_recipients_except,
+            )
+            .await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
@@ -503,15 +509,24 @@ impl Handler<DeleteProject> for SmActor {
     }
 }
 
-async fn user_join_project_async(request_user_change_server: ServerRequest, request_notify_join: ServerRequest,
-    user_recipient_clone: Recipient<SmMessage>, all_recipients_except: Vec<Recipient<SmMessage>>) {
-        // Add user on the project
-        let m = SmMessage::from(&request_user_change_server);
-        user_recipient_clone.send(m).await.unwrap();
+async fn user_join_project_async(
+    request_joined_users: ServerRequest,
+    request_user_change_server: ServerRequest,
+    request_notify_join: ServerRequest,
+    user_recipient_clone: Recipient<SmMessage>,
+    all_recipients_except: Vec<Recipient<SmMessage>>,
+) {
+    // Send the list of joined users to the user
+    let m = SmMessage::from(&request_joined_users);
+    user_recipient_clone.send(m).await.unwrap();
 
-        // Notify all the other project's users
-        broadcast(request_notify_join, &all_recipients_except).await;
-    }
+    // Add user on the project
+    let m = SmMessage::from(&request_user_change_server);
+    user_recipient_clone.send(m).await.unwrap();
+
+    // Notify all the other project's users
+    broadcast(request_notify_join, &all_recipients_except).await;
+}
 
 // Joins a project
 impl Handler<JoinProject> for SmActor {
@@ -520,13 +535,22 @@ impl Handler<JoinProject> for SmActor {
     fn handle(&mut self, msg: JoinProject, ctx: &mut Context<Self>) -> Self::Result {
         let JoinProject { id, project_name } = msg;
 
-        let (request_user_change_server, request_notify_join) = self.user_join_project(project_name.clone(), id)?;
+        let (request_joined_users, request_user_change_server, request_notify_join) =
+            self.user_join_project(project_name.clone(), id)?;
 
         let user_recipient_clone = self.sessions[&id].clone();
-        let all_recipients_except = self.get_all_cloned_recipients_project_except(&project_name, id);
+        let all_recipients_except =
+            self.get_all_cloned_recipients_project_except(&project_name, id);
 
         let fut = async move {
-            user_join_project_async(request_user_change_server, request_notify_join, user_recipient_clone, all_recipients_except).await;
+            user_join_project_async(
+                request_joined_users,
+                request_user_change_server,
+                request_notify_join,
+                user_recipient_clone,
+                all_recipients_except,
+            )
+            .await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
@@ -548,10 +572,11 @@ impl Handler<CreateSegment> for SmActor {
             ..
         } = msg;
 
-        let request = match self.add_segment(project_name.clone(), position, segment_sentence.clone()) {
-            Ok(r) => r,
-            Err(e) => return Err(e),
-        };
+        let request =
+            match self.add_segment(project_name.clone(), position, segment_sentence.clone()) {
+                Ok(r) => r,
+                Err(e) => return Err(e),
+            };
 
         let recipients = self.get_all_cloned_recipients_project(&project_name);
 
@@ -653,7 +678,11 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             ..
         } = msg;
 
-        let request = match self.modify_segment_combo_index(project_name.clone(), segment_position, new_combo_index) {
+        let request = match self.modify_segment_combo_index(
+            project_name.clone(),
+            segment_position,
+            new_combo_index,
+        ) {
             Ok(r) => r,
             Err(e) => return Err(e),
         };
@@ -685,7 +714,7 @@ impl Handler<RemoveSegment> for SmActor {
         } = msg;
 
         // Retrieve a server request
-        let request = match self.remove_segment(project_name.clone(), segment_position){
+        let request = match self.remove_segment(project_name.clone(), segment_position) {
             Ok(r) => r,
             Err(e) => return Err(e),
         };
