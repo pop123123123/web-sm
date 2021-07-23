@@ -18,6 +18,9 @@ pub enum ClientRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ServerRequest {
+    JoinedUsers {
+        users: Vec<usize>,
+    },
     UserJoinedProject {
         user: usize,
     },

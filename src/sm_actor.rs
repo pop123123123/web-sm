@@ -230,7 +230,11 @@ impl SmActor {
             .editing_sessions
             .get_mut(&project_name)
             .expect("Inconsistent sessions/data");
+        let r = ServerRequest::JoinedUsers {
+            users: users.iter().map(|u| *u).collect(),
+        };
         users.insert(user);
+        self.send(user, &r).ok();
 
         let Project {
             seed,
