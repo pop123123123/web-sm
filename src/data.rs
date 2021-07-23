@@ -150,14 +150,14 @@ impl<'a> PreviewId<'a> {
         let mut p = std::env::current_dir().expect("Could not access current directory");
         p.push(PREVIEW_FOLDER);
         p.push(self.file_name());
-        p.set_extension("mp4");
+        p.set_extension("webm");
         p
     }
     pub fn render_path(&self) -> std::path::PathBuf {
         let mut p = std::env::current_dir().expect("Could not access current directory");
         p.push(RENDER_FOLDER);
         p.push(self.file_name());
-        p.set_extension("mp4");
+        p.set_extension("webm");
         p
     }
 }

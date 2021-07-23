@@ -24,6 +24,11 @@ pub enum ServerRequest {
     UserLeftProject {
         user: usize,
     },
+    Preview {
+        data: String,
+        #[serde(flatten)]
+        segment: Segment,
+    },
     #[serde(rename_all = "camelCase")]
     ChangeProject {
         seed: Seed,

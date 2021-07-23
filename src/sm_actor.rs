@@ -493,23 +493,30 @@ impl Handler<ModifySegmentSentence> for SmActor {
         };
 
         // Get the list of the sessions linked to the project
-        let recipients = self.editing_sessions[&project_name]
+        let recipients: Vec<_> = self.editing_sessions[&project_name]
             .iter()
             .map(|id| self.sessions[id].clone())
             .collect();
 
-        // Send the notification to all involved sessions
-        let fut = async {
-            broadcast(request, recipients).await;
-        };
-        let fut = actix::fut::wrap_future::<_, Self>(fut);
-        ctx.spawn(fut);
-
-        // Launch the analyze
+        let segment = self.projects[&project_name].segments[segment_position as usize].clone();
         let project = (**self.projects.get(&project_name).unwrap()).clone();
+
         let fut = async move {
-            sm::analyze(&project, &new_sentence).await;
+            // Send the notification to all involved sessions
+            broadcast(request, &recipients).await;
+            let res = sm::analyze(&project, &new_sentence).await;
+
+            let combos = res.unwrap();
             // TODO: run n first previews
+            let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+            let path = res.unwrap();
+
+            let bytes = async_fs::read(path).await.unwrap();
+
+            let decoder = base64::encode(bytes);
+            let data = decoder.to_owned();
+            let r = ServerRequest::Preview { segment, data };
+            broadcast(r, &recipients).await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
@@ -520,7 +527,7 @@ impl Handler<ModifySegmentSentence> for SmActor {
 }
 
 // Async function used to send a server request to a list of recipients
-async fn broadcast(request: ServerRequest, recipients: Vec<Recipient<SmMessage>>) {
+async fn broadcast(request: ServerRequest, recipients: &[Recipient<SmMessage>]) {
     let m = SmMessage::from(&request);
     let future_send = recipients.iter().map(|recipient| {
         //TODO: check send Result
