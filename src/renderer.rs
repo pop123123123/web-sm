@@ -14,16 +14,16 @@ fn render_pipeline(pipeline: &ges::Pipeline, out_uri: &str) -> BoxResult {
         .presence(0)
         .build()?;
 
-    // Every videostream piped into the encodebin should be encoded using theora.
+    // Every videostream piped into the encodebin should be encoded using vp9.
     let video_profile = EncodingVideoProfileBuilder::new()
-        .format(&gst::Caps::new_simple("video/x-theora", &[]))
+        .format(&gst::Caps::new_simple("video/x-vp9", &[]))
         .presence(0)
         .build()?;
 
-    // All streams are then finally combined into a matroska container.
+    // All streams are then finally combined into a webm container.
     let container_profile = EncodingContainerProfileBuilder::new()
         .name("container")
-        .format(&gst::Caps::new_simple("video/x-matroska", &[]))
+        .format(&gst::Caps::new_simple("video/webm", &[]))
         .add_profile(&(video_profile))
         .add_profile(&(audio_profile))
         .build()?;
@@ -58,7 +58,10 @@ fn render_pipeline(pipeline: &ges::Pipeline, out_uri: &str) -> BoxResult {
     Ok(())
 }
 
-pub fn preview(videos: &[Video], phonems: &[Phonem]) -> BoxResult {
+pub fn preview(
+    videos: &[Video],
+    phonems: &[Phonem],
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let id = PreviewId::from_project_sentence(videos, phonems);
     let p = id.path();
     if !p.exists() {
@@ -66,9 +69,10 @@ pub fn preview(videos: &[Video], phonems: &[Phonem]) -> BoxResult {
     } else {
         Ok(())
     }
+    .map(|()| p)
 }
 
-pub fn render(videos: &[Video], phonems: &[Phonem]) -> BoxResult {
+pub fn render(videos: &[Video], phonems: &[Phonem]) -> Result<(), Box<dyn std::error::Error>> {
     let id = PreviewId::from_project_sentence(videos, phonems);
     let p = id.render_path();
     if !p.exists() {

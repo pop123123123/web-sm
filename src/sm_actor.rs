@@ -9,6 +9,24 @@ use std::collections::{HashMap, HashSet};
 pub type SessionId = usize;
 pub type ClientId = usize;
 
+use crate::sm;
+
+macro_rules! clone_project{
+    ($self:expr, $project_name:expr)=>{
+        {
+            (**$self.projects.get(&$project_name).unwrap()).clone()
+        }
+    }
+}
+
+macro_rules! clone_segment{
+    ($self:expr, $project_name:expr, $position:expr)=>{
+        {
+            $self.projects[&$project_name].segments[$position as usize].clone()
+        }
+    }
+}
+
 /// Chat server sends this messages to session
 #[derive(Message, Clone)]
 #[rtype(result = "()")]
@@ -145,45 +163,44 @@ impl SmActor {
     }
 }
 
+// Async function used to send a server request to a list of recipients
+async fn broadcast(request: ServerRequest, recipients: &[Recipient<SmMessage>]) {
+    let m = SmMessage::from(&request);
+    let future_send = recipients.iter().map(|recipient| {
+        //TODO: check send Result
+        recipient.send(m.clone())
+    });
+    futures::future::join_all(future_send).await;
+}
+
 impl SmActor {
-    fn broadcast_project_except(
+    fn get_all_recipients(&self) -> Vec<Recipient<SmMessage>> {
+        let recipients: Vec<_> = self.sessions.values().cloned().collect();
+        recipients
+    }
+
+    fn get_all_cloned_recipients_project(&self, project_name: &str) -> Vec<Recipient<SmMessage>> {
+        // Get the list of the sessions linked to the project
+        let recipients: Vec<_> = self.editing_sessions[project_name]
+        .iter()
+        .map(|id| self.sessions[id].clone())
+        .collect();
+
+        recipients
+    }
+
+    fn get_all_cloned_recipients_project_except(
         &self,
         project_name: &str,
         user: usize,
-        request: &ServerRequest,
-    ) -> Result<(), ServerError> {
-        let m = SmMessage::from(request);
-        self.editing_sessions[project_name]
+    ) -> Vec<Recipient<SmMessage>> {
+        let recipients: Vec<_> = self.editing_sessions[project_name]
             .iter()
             .filter(|id_| **id_ != user)
-            .for_each(|id| {
-                self.sessions[id].do_send(m.clone());
-            });
-        Ok(())
-    }
-    fn broadcast_project(
-        &self,
-        project_name: &str,
-        request: &ServerRequest,
-    ) -> Result<(), ServerError> {
-        let m = SmMessage::from(request);
-        self.editing_sessions[project_name].iter().for_each(|id| {
-            self.sessions[id].do_send(m.clone());
-        });
-        Ok(())
-    }
-    fn broadcast(&self, request: &ServerRequest) -> Result<(), ServerError> {
-        let m = SmMessage::from(request);
-        self.sessions.values().for_each(|recipient| {
-            recipient.do_send(m.clone());
-        });
-        Ok(())
-    }
-    fn send(&self, user: usize, request: &ServerRequest) -> Result<(), ServerError> {
-        let m = SmMessage::from(request);
-        self.sessions[&user]
-            .do_send(m)
-            .map_err(|_| ServerError::CommunicationError)
+            .map(|id| self.sessions[id].clone())
+            .collect();
+
+            recipients
     }
 
     fn create_project(
@@ -200,27 +217,27 @@ impl SmActor {
         self.projects.insert(project_name.clone(), project.clone());
         self.editing_sessions.insert(project_name, HashSet::new());
 
-        self.broadcast(&ServerRequest::NewProject {
-            project: (*project.clone()),
-        })
-        .ok();
         Ok(project)
     }
-    fn delete_project(&mut self, project_name: ProjectId) -> Result<(), ServerError> {
+    fn delete_project(&mut self, project_name: ProjectId) -> Result<ServerRequest, ServerError> {
         if !self.projects.contains_key(&project_name) {
             return Err(ServerError::ProjectDoesNotExist);
         }
 
         self.projects.remove(&project_name);
 
-        self.broadcast(&ServerRequest::RemoveProject { name: project_name })
+        let r = ServerRequest::RemoveProject {
+            name: project_name,
+        };
+
+        Ok(r)
     }
 
     fn user_join_project(
         &mut self,
         project_name: ProjectId,
         user: ClientId,
-    ) -> Result<(), ServerError> {
+    ) -> Result<(ServerRequest, ServerRequest), ServerError> {
         let users = &self.editing_sessions[&project_name];
         if users.contains(&user) {
             return Err(ServerError::UserAlreadyJoinedProject);
@@ -242,16 +259,15 @@ impl SmActor {
             name,
             segments,
         } = &*self.projects[&project_name];
-        let r = ServerRequest::ChangeProject {
+        let request_user_change_server = ServerRequest::ChangeProject {
             seed: (*seed).clone(),
             video_urls: (*video_urls).clone(),
             name: (*name).clone(),
             segments: (*segments).clone(),
         };
-        self.send(user, &r).ok();
+        let request_notify_join = ServerRequest::UserJoinedProject { user };
 
-        let r = ServerRequest::UserJoinedProject { user };
-        self.broadcast_project_except(&project_name, user, &r)
+        Ok((request_user_change_server, request_notify_join))
     }
 
     fn add_segment(
@@ -259,7 +275,7 @@ impl SmActor {
         project_name: ProjectId,
         position: u16,
         sentence: String,
-    ) -> Result<(), ServerError> {
+    ) -> Result<ServerRequest, ServerError> {
         let project = match self.projects.get_mut(&project_name) {
             Some(p) => p,
             None => return Err(ServerError::ProjectDoesNotExist),
@@ -272,13 +288,12 @@ impl SmActor {
         let segment = Segment::new(&sentence);
         project.segments.insert(position as usize, segment.clone());
 
-        // TODO: run analysis
-
         let r = ServerRequest::NewSegment {
             segment,
             row: position as usize,
         };
-        self.broadcast_project(&project_name, &r)
+
+        Ok(r)
     }
 
     fn modify_segment_sentence(
@@ -286,7 +301,7 @@ impl SmActor {
         project_name: ProjectId,
         segment_position: u16,
         sentence: String,
-    ) -> Result<(), ServerError> {
+    ) -> Result<ServerRequest, ServerError> {
         let project = match self.projects.get_mut(&project_name) {
             Some(p) => p,
             None => return Err(ServerError::ProjectDoesNotExist),
@@ -302,7 +317,8 @@ impl SmActor {
             row: segment_position as usize,
             sentence,
         };
-        self.broadcast_project(&project_name, &r)
+
+        Ok(r)
     }
 
     fn modify_segment_combo_index(
@@ -310,7 +326,7 @@ impl SmActor {
         project_name: ProjectId,
         segment_position: u16,
         index: u16,
-    ) -> Result<(), ServerError> {
+    ) -> Result<ServerRequest, ServerError> {
         let project = match self.projects.get_mut(&project_name) {
             Some(p) => p,
             None => return Err(ServerError::ProjectDoesNotExist),
@@ -326,14 +342,14 @@ impl SmActor {
             row: segment_position as usize,
             combo_index: index,
         };
-        self.broadcast_project(&project_name, &r)
+        Ok(r)
     }
 
     fn remove_segment(
         &mut self,
         project_name: ProjectId,
         segment_position: u16,
-    ) -> Result<(), ServerError> {
+    ) -> Result<ServerRequest, ServerError> {
         let project = match self.projects.get_mut(&project_name) {
             Some(p) => p,
             None => return Err(ServerError::ProjectDoesNotExist),
@@ -348,7 +364,7 @@ impl SmActor {
         let r = ServerRequest::RemoveSegment {
             row: segment_position as usize,
         };
-        self.broadcast_project(&project_name, &r)
+        Ok(r)
     }
 }
 
@@ -376,9 +392,8 @@ impl Handler<Connect> for SmActor {
 impl Handler<Disconnect> for SmActor {
     type Result = ();
 
-    fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: Disconnect, ctx: &mut Context<Self>) {
         let r = ServerRequest::UserLeftProject { user: msg.id };
-        let m = SmMessage::from(&r);
         // Removing client from all subscribed sessions
         let rooms: Vec<_> = self
             .editing_sessions
@@ -388,14 +403,22 @@ impl Handler<Disconnect> for SmActor {
                 s
             })
             .collect();
-        rooms
+
+        let recipients : Vec<_> = rooms
             .iter()
             .fold(HashSet::new(), |acc, hs| acc.union(hs).cloned().collect())
             .iter()
-            .for_each(|id| {
-                self.sessions[&id].do_send(m.clone()).ok();
-            });
+            .map(|id| self.sessions[&id].clone())
+            .collect();
+
         self.sessions.remove(&msg.id);
+
+        let fut = async move {
+            broadcast(r, &recipients).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
 
         // TODO: free projects that are not edited anymore by anybody
     }
@@ -416,7 +439,7 @@ impl Handler<ListProjects> for SmActor {
 impl Handler<CreateProject> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: CreateProject, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: CreateProject, ctx: &mut Context<Self>) -> Self::Result {
         let CreateProject {
             id,
             project_name,
@@ -424,10 +447,33 @@ impl Handler<CreateProject> for SmActor {
             urls,
         } = msg;
 
+        // Creating a new project
         println!("New project: {} {} {:?}", project_name, seed, urls);
-        self.create_project(project_name.clone(), seed, &urls)
-            .map(|_| ())?;
-        self.user_join_project(project_name, id)?;
+        let project = self.create_project(project_name.clone(), seed, &urls)?;
+
+        let all_recipients = self.get_all_recipients();
+
+        let new_project_request = ServerRequest::NewProject {
+            project: (*project),
+        };
+
+        // Adding user to it
+        let (request_user_change_server, request_notify_join) = self.user_join_project(project_name.clone(), id)?;
+
+        let user_recipient_clone = self.sessions[&id].clone();
+        let all_recipients_except = self.get_all_cloned_recipients_project_except(&project_name, id);
+
+        let fut = async move {
+            // Notify all users that a project have been created
+            broadcast(new_project_request, &all_recipients).await;
+
+            // Adding user to the project and notify all the other users on the project
+            user_join_project_async(request_user_change_server, request_notify_join, user_recipient_clone, all_recipients_except).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
         Ok(())
     }
 }
@@ -436,21 +482,56 @@ impl Handler<CreateProject> for SmActor {
 impl Handler<DeleteProject> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: DeleteProject, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: DeleteProject, ctx: &mut Context<Self>) -> Self::Result {
         let DeleteProject { project_name } = msg;
 
-        self.delete_project(project_name)
+        let request = match self.delete_project(project_name.clone()) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let fut = async move {
+            broadcast(request, &recipients).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
 }
+
+async fn user_join_project_async(request_user_change_server: ServerRequest, request_notify_join: ServerRequest,
+    user_recipient_clone: Recipient<SmMessage>, all_recipients_except: Vec<Recipient<SmMessage>>) {
+        // Add user on the project
+        let m = SmMessage::from(&request_user_change_server);
+        user_recipient_clone.send(m).await.unwrap();
+
+        // Notify all the other project's users
+        broadcast(request_notify_join, &all_recipients_except).await;
+    }
 
 // Joins a project
 impl Handler<JoinProject> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: JoinProject, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: JoinProject, ctx: &mut Context<Self>) -> Self::Result {
         let JoinProject { id, project_name } = msg;
 
-        self.user_join_project(project_name, id)?;
+        let (request_user_change_server, request_notify_join) = self.user_join_project(project_name.clone(), id)?;
+
+        let user_recipient_clone = self.sessions[&id].clone();
+        let all_recipients_except = self.get_all_cloned_recipients_project_except(&project_name, id);
+
+        let fut = async move {
+            user_join_project_async(request_user_change_server, request_notify_join, user_recipient_clone, all_recipients_except).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
         Ok(())
     }
 }
@@ -459,7 +540,7 @@ impl Handler<JoinProject> for SmActor {
 impl Handler<CreateSegment> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: CreateSegment, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: CreateSegment, ctx: &mut Context<Self>) -> Self::Result {
         let CreateSegment {
             project_name,
             segment_sentence,
@@ -467,7 +548,43 @@ impl Handler<CreateSegment> for SmActor {
             ..
         } = msg;
 
-        self.add_segment(project_name, position, segment_sentence)
+        let request = match self.add_segment(project_name.clone(), position, segment_sentence.clone()) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let segment = clone_segment!(self, project_name, position);
+        let project = clone_project!(self, project_name);
+
+        let fut = async move {
+            // Send the notification to all involved sessions
+            broadcast(request, &recipients).await;
+
+            // TODO: really think about that issue
+            if !segment_sentence.trim().is_empty() {
+                let res = sm::analyze(&project, &segment_sentence).await;
+
+                let combos = res.unwrap();
+                // TODO: run n first previews
+                let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+                let path = res.unwrap();
+
+                let bytes = async_fs::read(path).await.unwrap();
+
+                let decoder = base64::encode(bytes);
+                let data = decoder.to_owned();
+                let r = ServerRequest::Preview { segment, data };
+
+                broadcast(r, &recipients).await;
+            }
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
 }
 
@@ -475,7 +592,7 @@ impl Handler<CreateSegment> for SmActor {
 impl Handler<ModifySegmentSentence> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: ModifySegmentSentence, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: ModifySegmentSentence, ctx: &mut Context<Self>) -> Self::Result {
         let ModifySegmentSentence {
             project_name,
             segment_position,
@@ -483,7 +600,44 @@ impl Handler<ModifySegmentSentence> for SmActor {
             ..
         } = msg;
 
-        self.modify_segment_sentence(project_name, segment_position, new_sentence)
+        // Retrieve a server request
+        let request = match self.modify_segment_sentence(
+            project_name.clone(),
+            segment_position,
+            new_sentence.clone(),
+        ) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        // Get the list of the sessions linked to the project
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let segment = clone_segment!(self, project_name, segment_position);
+        let project = clone_project!(self, project_name);
+
+        let fut = async move {
+            // Send the notification to all involved sessions
+            broadcast(request, &recipients).await;
+            let res = sm::analyze(&project, &new_sentence).await;
+
+            let combos = res.unwrap();
+            // TODO: run n first previews
+            let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+            let path = res.unwrap();
+
+            let bytes = async_fs::read(path).await.unwrap();
+
+            let decoder = base64::encode(bytes);
+            let data = decoder.to_owned();
+            let r = ServerRequest::Preview { segment, data };
+            broadcast(r, &recipients).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
 }
 
@@ -491,7 +645,7 @@ impl Handler<ModifySegmentSentence> for SmActor {
 impl Handler<ModifySegmentComboIndex> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: ModifySegmentComboIndex, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: ModifySegmentComboIndex, ctx: &mut Context<Self>) -> Self::Result {
         let ModifySegmentComboIndex {
             project_name,
             segment_position,
@@ -499,7 +653,23 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             ..
         } = msg;
 
-        self.modify_segment_combo_index(project_name, segment_position, new_combo_index)
+        let request = match self.modify_segment_combo_index(project_name.clone(), segment_position, new_combo_index) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        // Get the list of the sessions linked to the project
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let fut = async move {
+            broadcast(request, &recipients).await;
+            //TODO: craft and send corresponding preview
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
 }
 
@@ -507,13 +677,30 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
 impl Handler<RemoveSegment> for SmActor {
     type Result = Result<(), ServerError>;
 
-    fn handle(&mut self, msg: RemoveSegment, _: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, msg: RemoveSegment, ctx: &mut Context<Self>) -> Self::Result {
         let RemoveSegment {
             project_name,
             segment_position,
             ..
         } = msg;
 
-        self.remove_segment(project_name, segment_position)
+        // Retrieve a server request
+        let request = match self.remove_segment(project_name.clone(), segment_position){
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        // Get the list of the sessions linked to the project
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let fut = async move {
+            // Send the notification to all involved sessions
+            broadcast(request, &recipients).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
     }
 }
