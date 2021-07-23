@@ -1,0 +1,23 @@
+{
+  "folders": [
+    {
+      "name": "web-sm-client",
+      "path": "../front"
+    },
+    {
+      "name": "web-sm",
+      "path": ".."
+    },
+    {
+      "name": "sm-interface",
+      "path": "../sm-interface"
+    },
+  ],
+  "settings": {
+    "files.exclude": {
+      "node_modules/": true,
+      "front/": true,
+      "sm-interface/": true,
+    },
+  }
+}
