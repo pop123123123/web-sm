@@ -690,9 +690,25 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
         // Get the list of the sessions linked to the project
         let recipients = self.get_all_cloned_recipients_project(&project_name);
 
+        let segment = clone_segment!(self, project_name, segment_position);
+        let project = clone_project!(self, project_name);
+
         let fut = async move {
             broadcast(request, &recipients).await;
-            //TODO: craft and send corresponding preview
+
+            // Prepare preview and sends it
+            let res = sm::analyze(&project, &segment.sentence).await;
+            let combos = res.unwrap();
+            // TODO: run n first previews
+            let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+            let path = res.unwrap();
+
+            let bytes = async_fs::read(path).await.unwrap();
+
+            let decoder = base64::encode(bytes);
+            let data = decoder.to_owned();
+            let r = ServerRequest::Preview { segment, data };
+            broadcast(r, &recipients).await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
