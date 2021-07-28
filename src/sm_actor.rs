@@ -593,7 +593,7 @@ impl Handler<CreateSegment> for SmActor {
 
                 let combos = res.unwrap();
                 // TODO: run n first previews
-                let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+                let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
                 let path = res.unwrap();
 
                 let bytes = async_fs::read(path).await.unwrap();
@@ -648,7 +648,7 @@ impl Handler<ModifySegmentSentence> for SmActor {
 
             let combos = res.unwrap();
             // TODO: run n first previews
-            let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+            let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
@@ -700,7 +700,7 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             let res = sm::analyze(&project, &segment.sentence).await;
             let combos = res.unwrap();
             // TODO: run n first previews
-            let res = crate::renderer::preview(&project.video_urls, &combos[0]);
+            let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
