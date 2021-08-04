@@ -141,6 +141,17 @@ impl actix::Message for RemoveSegment {
     type Result = Result<(), ServerError>;
 }
 
+/// Remove a segment
+#[derive(Deserialize)]
+pub struct Export {
+    #[serde(skip)]
+    pub id: ClientId,
+    pub project_name: ProjectId,
+}
+impl actix::Message for Export {
+    type Result = Result<(), ServerError>;
+}
+
 pub struct SmActor {
     sessions: HashMap<SessionId, Recipient<SmMessage>>,
     projects: HashMap<ProjectId, Box<Project>>,
@@ -157,6 +168,14 @@ impl SmActor {
             rng: rand::thread_rng(),
         }
     }
+}
+
+fn hash_segments(segments: &[Segment]) -> String {
+    segments
+        .iter()
+        .map(|s| s.sentence.clone() + &s.combo_index.to_string())
+        .collect::<Vec<_>>()
+        .join("")
 }
 
 // Async function used to send a server request to a list of recipients
@@ -593,7 +612,10 @@ impl Handler<CreateSegment> for SmActor {
 
                 let combos = res.unwrap();
                 // TODO: run n first previews
-                let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
+                let res = crate::renderer::preview(
+                    &project.video_urls,
+                    &combos[segment.combo_index as usize],
+                );
                 let path = res.unwrap();
 
                 let bytes = async_fs::read(path).await.unwrap();
@@ -648,7 +670,10 @@ impl Handler<ModifySegmentSentence> for SmActor {
 
             let combos = res.unwrap();
             // TODO: run n first previews
-            let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
+            let res = crate::renderer::preview(
+                &project.video_urls,
+                &combos[segment.combo_index as usize],
+            );
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
@@ -700,7 +725,10 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             let res = sm::analyze(&project, &segment.sentence).await;
             let combos = res.unwrap();
             // TODO: run n first previews
-            let res = crate::renderer::preview(&project.video_urls, &combos[segment.combo_index as usize]);
+            let res = crate::renderer::preview(
+                &project.video_urls,
+                &combos[segment.combo_index as usize],
+            );
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
@@ -741,6 +769,56 @@ impl Handler<RemoveSegment> for SmActor {
         let fut = async move {
             // Send the notification to all involved sessions
             broadcast(request, &recipients).await;
+        };
+
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
+    }
+}
+// Removes a segment
+impl Handler<Export> for SmActor {
+    type Result = Result<(), ServerError>;
+
+    fn handle(&mut self, msg: Export, ctx: &mut Context<Self>) -> Self::Result {
+        let Export { project_name, .. } = msg;
+
+        // Get the list of the sessions linked to the project
+        let recipients = self.get_all_cloned_recipients_project(&project_name);
+
+        let project = clone_project!(self, project_name);
+
+        let fut = async move {
+            // Prepare preview and sends it
+            let analysis = project
+                .segments
+                .iter()
+                .map(|s| sm::analyze(&project, &s.sentence));
+            let res: Vec<_> = futures::future::join_all(analysis).await;
+            let res: Vec<_> = res.iter().map(|c| c.as_ref().unwrap()).collect();
+
+            let combos: Vec<_> = res
+                .iter()
+                .enumerate()
+                .map(|(i, combos)| {
+                    combos[project.segments[i as usize].combo_index as usize]
+                        .iter()
+                        .map(|p| (*p).clone())
+                })
+                .flatten()
+                .collect();
+
+            let res = crate::renderer::render(&project.video_urls, &combos);
+            let path = res.unwrap();
+
+            let bytes = async_fs::read(path).await.unwrap();
+
+            let decoder = base64::encode(bytes);
+            let data = decoder.to_owned();
+            let hash = hash_segments(&project.segments);
+            let r = ServerRequest::RenderResult { hash, data };
+            broadcast(r, &recipients).await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);

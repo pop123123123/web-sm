@@ -72,7 +72,10 @@ pub fn preview(
     .map(|()| p)
 }
 
-pub fn render(videos: &[Video], phonems: &[Phonem]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn render(
+    videos: &[Video],
+    phonems: &[Phonem],
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let id = PreviewId::from_project_sentence(videos, phonems);
     let p = id.render_path();
     if !p.exists() {
@@ -80,6 +83,7 @@ pub fn render(videos: &[Video], phonems: &[Phonem]) -> Result<(), Box<dyn std::e
     } else {
         Ok(())
     }
+    .map(|()| p)
 }
 
 fn render_phonems(

@@ -127,6 +127,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSmSession {
                 Ok(ClientRequest::RemoveSegment(req)) => {
                     transfer_id!(self, ctx, req, RemoveSegment)
                 }
+                Ok(ClientRequest::Export(req)) => {
+                    transfer_id!(self, ctx, req, Export)
+                }
                 _ => {
                     println!("unrecognized request")
                 }

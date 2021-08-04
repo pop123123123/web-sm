@@ -13,6 +13,7 @@ pub enum ClientRequest {
     ModifySegmentSentence(sm_actor::ModifySegmentSentence),
     ModifySegmentComboIndex(sm_actor::ModifySegmentComboIndex),
     RemoveSegment(sm_actor::RemoveSegment),
+    Export(sm_actor::Export),
 }
 
 #[derive(Serialize)]
@@ -68,5 +69,9 @@ pub enum ServerRequest {
     },
     ChangeListProjects {
         projects: Vec<Project>,
+    },
+    RenderResult {
+        hash: String,
+        data: String,
     },
 }
