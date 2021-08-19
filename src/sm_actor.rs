@@ -157,6 +157,7 @@ pub struct SmActor {
     projects: HashMap<ProjectId, Box<Project>>,
     editing_sessions: HashMap<ProjectId, HashSet<ClientId>>,
     rng: ThreadRng,
+    downloader: actix::Addr<crate::downloader::DownloaderActor>,
 }
 
 impl SmActor {
@@ -166,6 +167,7 @@ impl SmActor {
             projects: HashMap::new(),
             editing_sessions: HashMap::new(),
             rng: rand::thread_rng(),
+            downloader: crate::downloader::DownloaderActor::new().start(),
         }
     }
 }
@@ -467,6 +469,8 @@ impl Handler<CreateProject> for SmActor {
         println!("New project: {} {} {:?}", project_name, seed, urls);
         let project = self.create_project(project_name.clone(), seed, &urls)?;
 
+        let project_videos = project.video_urls.to_vec();
+
         let all_recipients = self.get_all_recipients();
 
         let new_project_request = ServerRequest::NewProject {
@@ -481,6 +485,15 @@ impl Handler<CreateProject> for SmActor {
         let all_recipients_except =
             self.get_all_cloned_recipients_project_except(&project_name, id);
 
+        
+        let yt_ids: Vec<String> = project_videos.iter().map(|video| {
+            video.url.clone()
+        })
+        .collect();
+        let msg = crate::downloader::DownloadVideos{yt_ids};
+        let send_download_message = self.downloader.send(msg);
+
+
         let fut = async move {
             // Notify all users that a project have been created
             broadcast(new_project_request, &all_recipients).await;
@@ -494,10 +507,18 @@ impl Handler<CreateProject> for SmActor {
                 all_recipients_except,
             )
             .await;
+
+            send_download_message.await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
+
+        // Arbiter::new().exec_fn(move || {
+        //     async move {
+        //         sm::download_videos(project_videos).await;
+        //     };
+        // });
 
         Ok(())
     }
