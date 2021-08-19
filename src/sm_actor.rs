@@ -467,6 +467,8 @@ impl Handler<CreateProject> for SmActor {
         println!("New project: {} {} {:?}", project_name, seed, urls);
         let project = self.create_project(project_name.clone(), seed, &urls)?;
 
+        let project_videos = project.video_urls.to_vec();
+
         let all_recipients = self.get_all_recipients();
 
         let new_project_request = ServerRequest::NewProject {
@@ -494,6 +496,8 @@ impl Handler<CreateProject> for SmActor {
                 all_recipients_except,
             )
             .await;
+
+            sm::download_videos(project_videos).await;
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
