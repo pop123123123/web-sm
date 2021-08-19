@@ -251,19 +251,18 @@ impl SmActor {
         project_name: ProjectId,
         user: ClientId,
     ) -> Result<(ServerRequest, ServerRequest, ServerRequest), ServerError> {
-        let users = &self.editing_sessions[&project_name];
-        if users.contains(&user) {
-            return Err(ServerError::UserAlreadyJoinedProject);
-        }
-
         let users = self
             .editing_sessions
             .get_mut(&project_name)
             .expect("Inconsistent sessions/data");
+
+        if !users.contains(&user) {
+            users.insert(user);
+        }
+
         let request_joined_users = ServerRequest::JoinedUsers {
             users: users.iter().copied().collect(),
         };
-        users.insert(user);
 
         let Project {
             seed,
