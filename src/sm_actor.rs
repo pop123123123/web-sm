@@ -424,7 +424,7 @@ impl Handler<Disconnect> for SmActor {
             .iter()
             .fold(HashSet::new(), |acc, hs| acc.union(hs).cloned().collect())
             .iter()
-            .map(|id| self.sessions[&id].clone())
+            .map(|id| self.sessions[id].clone())
             .collect();
 
         self.sessions.remove(&msg.id);

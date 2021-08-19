@@ -65,7 +65,7 @@ pub fn preview(
     let id = PreviewId::from_project_sentence(videos, phonems);
     let p = id.path();
     if !p.exists() {
-        render_phonems(videos, &phonems, &p, true)
+        render_phonems(videos, phonems, &p, true)
     } else {
         Ok(())
     }
@@ -79,7 +79,7 @@ pub fn render(
     let id = PreviewId::from_project_sentence(videos, phonems);
     let p = id.render_path();
     if !p.exists() {
-        render_phonems(videos, &phonems, &p, false)
+        render_phonems(videos, phonems, &p, false)
     } else {
         Ok(())
     }

@@ -41,9 +41,6 @@ pub enum ServerRequest {
         segments: Vec<Segment>,
     },
     #[serde(rename_all = "camelCase")]
-    ChangeProjectName {
-        new_name: ProjectId,
-    },
     NewProject {
         #[serde(flatten)]
         project: Project,
