@@ -497,11 +497,17 @@ impl Handler<CreateProject> for SmActor {
             )
             .await;
 
-            sm::download_videos(project_videos).await;
+            sm::download_videos(project_videos);
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
+
+        // Arbiter::new().exec_fn(move || {
+        //     async move {
+        //         sm::download_videos(project_videos).await;
+        //     };
+        // });
 
         Ok(())
     }

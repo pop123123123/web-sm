@@ -1,11 +1,11 @@
+use crate::data::{AmbiguityError, AnalysisId, AnalysisResult, Project, Video};
+use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
 use chashmap::CHashMap;
 use once_cell::sync::Lazy;
+use std::error::Error;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
-use ytd_rs::{YoutubeDL, ResultType, Arg};
-use std::path::PathBuf;
-use std::error::Error;
-use crate::data::{AmbiguityError, AnalysisId, AnalysisResult, Project, Video};
 
 fn get_command() -> Command {
     cfg_if::cfg_if! {
@@ -23,33 +23,6 @@ static ANALYSIS_CACHE: Lazy<RwLock<AnalysisCache>> =
 
 fn add_in_cache(key: AnalysisId, val: Arc<AnalysisResult>) {
     ANALYSIS_CACHE.read().unwrap().insert(key, val);
-}
-
-pub async fn download_videos(
-    videos: Vec<Video>,
-) -> () {
-    let args = vec![Arg::new_with_arg("--output", "%(id)s")];
-
-    // Align all the urls on a same string
-    let mut inline_urls = videos.iter().fold(String::from(""), |mut full_str, v| {
-        full_str.push_str(&v.url);
-        full_str.push_str(" ");
-        full_str
-    });
-    inline_urls.pop(); // Remove last superfluous " "
-
-    let path = PathBuf::from("./.videos");
-    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone()).unwrap();
-
-    // start download
-    let download = ytd.download();
-
-    // check what the result is and print out the path to the download or the error
-    match download.result_type() {
-        ResultType::SUCCESS => println!("Videos downloaded: {}", download.output_dir().to_string_lossy()),
-        ResultType::IOERROR | ResultType::FAILURE =>
-                println!("Couldn't start download: {}", download.output()),
-    };
 }
 
 pub async fn analyze(

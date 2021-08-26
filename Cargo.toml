@@ -23,7 +23,6 @@ async-fs = "1.5.0"
 gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", rev="a94d84e7805196364b4fc584205ce4882f3acd81"}
 gst-pbutils = { package = "gstreamer-pbutils", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", rev="a94d84e7805196364b4fc584205ce4882f3acd81" }
 ges = { package = "gstreamer-editing-services", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", rev="a94d84e7805196364b4fc584205ce4882f3acd81" }
-ytd-rs = "*"
 
 [dependencies.tokio]
 version = "0.2.25"

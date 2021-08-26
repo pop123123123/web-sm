@@ -3,12 +3,14 @@ use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
 
 mod data;
+mod downloader;
 mod error;
 mod messages;
 mod renderer;
 mod sm;
 mod sm_actor;
 mod socket;
+mod youtube_dl;
 
 const FRONTEND_PATH: &str = "./front/dist/";
 const INDEX_PATH: &str = "./front/dist/index.html";

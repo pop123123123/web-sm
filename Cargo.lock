@@ -2570,7 +2570,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
- "ytd-rs",
 ]
 
 [[package]]
@@ -2630,13 +2629,4 @@ checksum = "d59cefebd0c892fa2dd6de581e937301d8552cb44489cdff035c6187cb63fa5e"
 dependencies = [
  "winapi 0.2.8",
  "winapi-build",
-]
-
-[[package]]
-name = "ytd-rs"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3391ca7492f1aaa4a253c38c1e04a7c02cfeac26020d0cf0d46f48c71b75776"
-dependencies = [
- "regex",
 ]
