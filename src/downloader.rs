@@ -21,7 +21,7 @@ pub struct DownloadVideos {
     pub yt_ids: Vec<String>,
 }
 impl actix::Message for DownloadVideos {
-    type Result = Result<DownloadVideoResult, ServerError>;
+    type Result = Result<(), ServerError>;
 }
 
 pub enum DownloadVideoResult {
@@ -43,56 +43,46 @@ impl DownloaderActor {
 }
 
 fn get_video(yt_id: &str) -> Option<&str> {
-    Some("coucou")
+    todo!("Implement get_video")
 }
 
-impl DownloaderActor {
-    pub async fn download_videos(&mut self, yt_ids: Vec<String>) -> Result<(), ()> {
-        println!("PING");
-        yt_ids.iter().for_each(|yt_id| {
-            self.download_states.insert(yt_id.clone(), false);
-        });
+async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, ()> {
+    let args = vec![Arg::new_with_arg("--output", "%(id)s")];
 
-        let args = vec![Arg::new_with_arg("--output", "%(id)s")];
+    // Align all the urls on a same string
+    let mut inline_urls = yt_ids.iter().fold(String::from(""), |mut full_str, yt_id| {
+        full_str.push_str(yt_id);
+        full_str.push_str(" ");
+        full_str
+    });
 
-        // Align all the urls on a same string
-        let mut inline_urls = yt_ids.iter().fold(String::from(""), |mut full_str, yt_id| {
-            full_str.push_str(yt_id);
-            full_str.push_str(" ");
-            full_str
-        });
+    inline_urls.pop(); // Remove last superfluous " "
 
-        inline_urls.pop(); // Remove last superfluous " "
+    let path = PathBuf::from("./.videos");
+    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone()).unwrap();
 
-        let path = PathBuf::from("./.videos");
-        let ytd = YoutubeDL::new(&path, args, &inline_urls.clone()).unwrap();
+    let max_tries: u8 = 5;
+    for i_try in 0..max_tries {
+        println!("Downloading videos {}. Try {}", inline_urls, i_try);
 
-        let max_tries = 5;
-        for i_try in 0..max_tries {
-            println!("Downloading videos {}. Try {}", inline_urls, i_try);
+        // start download
+        let download = ytd.download().await;
 
-            // start download
-            let download = ytd.download().await;
-
-            // check what the result is and print out the path to the download or the error
-            match download.result_type() {
-                ResultType::SUCCESS => {
-                    println!(
-                        "Videos downloaded: {}",
-                        download.output_dir().to_string_lossy()
-                    );
-                    yt_ids.into_iter().for_each(|yt_id| {
-                        self.download_states.insert(yt_id, true);
-                    });
-                    return Ok(());
-                }
-                ResultType::IOERROR | ResultType::FAILURE => {
-                    println!("Couldn't start download: {}", download.output())
-                }
-            };
-        }
-        Err(())
+        // check what the result is and print out the path to the download or the error
+        match download.result_type() {
+            ResultType::SUCCESS => {
+                println!(
+                    "Videos downloaded: {}",
+                    download.output_dir().to_string_lossy()
+                );
+                return Ok(yt_ids);
+            }
+            ResultType::IOERROR | ResultType::FAILURE => {
+                println!("Couldn't start download: {}", download.output())
+            }
+        };
     }
+    Err(())
 }
 
 impl Actor for DownloaderActor {
@@ -100,34 +90,50 @@ impl Actor for DownloaderActor {
 }
 
 impl Handler<DownloadVideos> for DownloaderActor {
-    type Result = Result<DownloadVideoResult, ServerError>;
+    type Result = ResponseActFuture<Self, Result<(), ServerError>>;
 
     fn handle(&mut self, msg: DownloadVideos, ctx: &mut Context<Self>) -> Self::Result {
-        if msg
+        let wrap_fut = if msg
             .yt_ids
-            .into_iter()
-            .any(|url| !self.download_states.contains_key(&url))
+            .iter()
+            .any(|url| !self.download_states.contains_key(url))
         {
-            let fut = self.download_videos(msg.yt_ids);
-            actix::Arbiter::spawn(async {
-                fut.await;
+            msg.yt_ids.iter().for_each(|yt_id| {
+                self.download_states.insert(yt_id.clone(), false);
             });
 
-            Ok(DownloadVideoResult::DonwloadStarted)
+            let wrap_download = actix::fut::wrap_future(download_videos(msg.yt_ids));
+            let mapped_download = wrap_download.map(
+                |result: Result<Vec<String>, ()>, actor: &mut DownloaderActor, _ctx| match result {
+                    Ok(yt_ids) => {
+                        yt_ids.into_iter().for_each(|yt_id| {
+                            actor.download_states.insert(yt_id, true);
+                        });
+                        Ok(())
+                    }
+                    Err(_e) => Err(ServerError::CommunicationError),
+                },
+            );
+            fut::Either::Left(mapped_download)
         } else {
-            if msg.yt_ids.into_iter().any(|url| get_video(&url).is_none()) {
-                return Ok(DownloadVideoResult::DownloadPending);
-            } else {
-                return Ok(DownloadVideoResult::AlreadyDownload);
-            }
-        }
+            fut::Either::Right(actix::fut::wrap_future(async {
+                if msg.yt_ids.into_iter().any(|url| get_video(&url).is_none()) {
+                    //Ok(DownloadVideoResult::DownloadPending)
+                    Ok(())
+                } else {
+                    // Ok(DownloadVideoResult::AlreadyDownload)
+                    Ok(())
+                }
+            }))
+        };
+        Box::pin(wrap_fut)
     }
 }
 
-impl Handler<GetVideoPath> for DownloaderActor {
-    type Result = Option<String>;
+// impl Handler<GetVideoPath> for DownloaderActor {
+//     type Result = Option<String>;
 
-    fn handle(&mut self, msg: GetVideoPath, ctx: &mut Context<Self>) -> Self::Result {
-        get_video(&msg.yt_id)
-    }
-}
+//     fn handle(&mut self, msg: GetVideoPath, ctx: &mut Context<Self>) -> Self::Result {
+//         get_video(&msg.yt_id)
+//     }
+// }
