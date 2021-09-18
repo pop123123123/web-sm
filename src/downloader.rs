@@ -64,7 +64,7 @@ async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, ()> {
     inline_urls.pop(); // Remove last superfluous " "
 
     let path = PathBuf::from("./.videos");
-    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone()).unwrap();
+    let ytd = YoutubeDL::new_multiple_links(&path, args, yt_ids.clone()).unwrap();
 
     let max_tries: u8 = 5;
     for i_try in 0..max_tries {
