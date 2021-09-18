@@ -156,7 +156,7 @@ fn render_phonems(
     render_pipeline(&pipeline, &uri)
 }
 
-fn render_main_video(
+pub fn render_main_video(
     in_path: &std::path::Path,
     out_path: &std::path::Path,
     small: bool,

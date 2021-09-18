@@ -1,4 +1,6 @@
+use crate::data::Video;
 use crate::error::*;
+use crate::renderer::render_main_video;
 use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
 use actix::*;
 use regex::Regex;
@@ -13,7 +15,7 @@ use std::vec::Vec;
 #[derive(Deserialize)]
 pub struct GetVideoPath {
     #[serde(skip)]
-    pub yt_id: String,
+    pub yt_ids: Vec<String>,
 }
 impl actix::Message for GetVideoPath {
     type Result = Result<(), DownloadVideoResult>;
@@ -32,17 +34,19 @@ pub enum DownloadVideoResult {
     NeverDownloaded,
     DonwloadStarted,
     DownloadPending,
-    AlreadyDownload,
+    AlreadyDownloaded,
 }
 
 pub struct DownloaderActor {
     download_states: HashMap<String, bool>,
+    videos: HashMap<String, Video>,
 }
 
 impl DownloaderActor {
     pub fn new() -> DownloaderActor {
         DownloaderActor {
             download_states: HashMap::new(),
+            videos: HashMap::new(),
         }
     }
 }
@@ -107,9 +111,27 @@ impl Handler<DownloadVideos> for DownloaderActor {
             let mapped_download = wrap_download.map(
                 |result: Result<Vec<String>, ()>, actor: &mut DownloaderActor, _ctx| match result {
                     Ok(yt_ids) => {
-                        yt_ids.into_iter().for_each(|yt_id| {
-                            actor.download_states.insert(yt_id, true);
+                        yt_ids.iter().for_each(|yt_id| {
+                            actor.download_states.insert(yt_id.to_owned(), true);
+
+                            let vid: Video = Video { url: yt_id.clone() };
+                            let path = get_video_path(yt_id).unwrap();
+                            crate::renderer::render_main_video(
+                                path.as_path(),
+                                vid.get_path_full_resolution().as_path(),
+                                false,
+                            )
+                            .unwrap();
+                            crate::renderer::render_main_video(
+                                path.as_path(),
+                                vid.get_path_small().as_path(),
+                                true,
+                            )
+                            .unwrap();
+
+                            actor.videos.insert(yt_id.clone(), vid);
                         });
+
                         Ok(())
                     }
                     Err(_e) => Err(ServerError::CommunicationError),
@@ -140,7 +162,7 @@ fn get_video_path(url: &str) -> Option<PathBuf> {
         re.is_match(&path_str)
     });
     match found_path {
-        Some(entry) => Some(entry.as_ref().unwrap().path()),
+        Some(entry) => Some(entry.as_ref().unwrap().path().canonicalize().unwrap()),
         None => None,
     }
 }
@@ -149,16 +171,25 @@ impl Handler<GetVideoPath> for DownloaderActor {
     type Result = Result<(), DownloadVideoResult>;
 
     fn handle(&mut self, msg: GetVideoPath, ctx: &mut Context<Self>) -> Self::Result {
-        let yt_id = msg.yt_id;
-        match self.download_states.get(&yt_id) {
-            Some(finished) => {
-                if *finished {
-                    Ok(())
-                } else {
-                    Err(DownloadVideoResult::DownloadPending)
+        let yt_ids = msg.yt_ids;
+
+        let status = yt_ids
+            .iter()
+            .map(|yt_id| match self.download_states.get(yt_id) {
+                Some(finished) => {
+                    if *finished {
+                        DownloadVideoResult::AlreadyDownloaded
+                    } else {
+                        DownloadVideoResult::DownloadPending
+                    }
                 }
-            }
-            None => Err(DownloadVideoResult::NeverDownloaded),
+                None => DownloadVideoResult::NeverDownloaded,
+            })
+            .find(|status| !matches!(status, DownloadVideoResult::AlreadyDownloaded));
+
+        match status {
+            Some(s) => Err(s),
+            None => Ok(()),
         }
     }
 }

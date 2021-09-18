@@ -1,4 +1,5 @@
 use crate::data::{Project, ProjectId, Seed, Segment};
+use crate::downloader::GetVideoPath;
 use crate::error::*;
 use crate::messages::ServerRequest;
 use actix::*;
@@ -512,12 +513,6 @@ impl Handler<CreateProject> for SmActor {
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
-        // Arbiter::new().exec_fn(move || {
-        //     async move {
-        //         sm::download_videos(project_videos).await;
-        //     };
-        // });
-
         Ok(())
     }
 }
@@ -682,25 +677,35 @@ impl Handler<ModifySegmentSentence> for SmActor {
         let segment = clone_segment!(self, project_name, segment_position);
         let project = clone_project!(self, project_name);
 
+        let msg = GetVideoPath {
+            yt_ids: project.video_urls.iter().map(|v| v.url.clone()).collect(),
+        };
+        let get_video_future = self.downloader.send(msg);
+
         let fut = async move {
             // Send the notification to all involved sessions
             broadcast(request, &recipients).await;
             let res = sm::analyze(&project, &new_sentence).await;
 
             let combos = res.unwrap();
-            // TODO: run n first previews
-            let res = crate::renderer::preview(
-                &project.video_urls,
-                &combos[segment.combo_index as usize],
-            );
-            let path = res.unwrap();
 
-            let bytes = async_fs::read(path).await.unwrap();
+            if get_video_future.await.is_ok() {
+                // TODO: run n first previews
+                let res = crate::renderer::preview(
+                    &project.video_urls,
+                    &combos[segment.combo_index as usize],
+                );
+                let path = res.unwrap();
 
-            let decoder = base64::encode(bytes);
-            let data = decoder.to_owned();
-            let r = ServerRequest::Preview { segment, data };
-            broadcast(r, &recipients).await;
+                let bytes = async_fs::read(path).await.unwrap();
+
+                let decoder = base64::encode(bytes);
+                let data = decoder.to_owned();
+                let r = ServerRequest::Preview { segment, data };
+                broadcast(r, &recipients).await;
+            } else {
+                todo!("Check error code, and maybe re-download videos")
+            }
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);

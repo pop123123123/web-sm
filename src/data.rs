@@ -43,14 +43,16 @@ impl Video {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(&self.url);
         p.set_extension("webm");
-        std::fs::canonicalize(p).unwrap()
+        let pwd = std::env::current_dir().unwrap();
+        pwd.join(p)
     }
 
     pub fn get_path_small(&self) -> std::path::PathBuf {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(format!("{}_small", self.url));
         p.set_extension("webm");
-        std::fs::canonicalize(p).unwrap()
+        let pwd = std::env::current_dir().unwrap();
+        pwd.join(p)
     }
 }
 
