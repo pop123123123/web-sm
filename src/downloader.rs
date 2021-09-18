@@ -4,6 +4,7 @@ use actix::*;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use std::vec::Vec;
 
 #[derive(Deserialize)]
@@ -12,7 +13,7 @@ pub struct GetVideoPath {
     pub yt_id: String,
 }
 impl actix::Message for GetVideoPath {
-    type Result = Option<String>;
+    type Result = Result<(), DownloadVideoResult>;
 }
 
 #[derive(Deserialize)]
@@ -25,6 +26,7 @@ impl actix::Message for DownloadVideos {
 }
 
 pub enum DownloadVideoResult {
+    NeverDownloaded,
     DonwloadStarted,
     DownloadPending,
     AlreadyDownload,
@@ -40,10 +42,6 @@ impl DownloaderActor {
             download_states: HashMap::new(),
         }
     }
-}
-
-fn get_video(yt_id: &str) -> Option<&str> {
-    todo!("Implement get_video")
 }
 
 async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, ()> {
@@ -117,23 +115,32 @@ impl Handler<DownloadVideos> for DownloaderActor {
             fut::Either::Left(mapped_download)
         } else {
             fut::Either::Right(actix::fut::wrap_future(async {
-                if msg.yt_ids.into_iter().any(|url| get_video(&url).is_none()) {
-                    //Ok(DownloadVideoResult::DownloadPending)
-                    Ok(())
-                } else {
-                    // Ok(DownloadVideoResult::AlreadyDownload)
-                    Ok(())
-                }
+                Ok(())
+                // if msg.yt_ids.into_iter().all(|url| get_video(&url).is_none()) {
+                //     Ok(())
+                // } else {
+                //     Ok(())
+                // }
             }))
         };
         Box::pin(wrap_fut)
     }
 }
 
-// impl Handler<GetVideoPath> for DownloaderActor {
-//     type Result = Option<String>;
+impl Handler<GetVideoPath> for DownloaderActor {
+    type Result = Result<(), DownloadVideoResult>;
 
-//     fn handle(&mut self, msg: GetVideoPath, ctx: &mut Context<Self>) -> Self::Result {
-//         get_video(&msg.yt_id)
-//     }
-// }
+    fn handle(&mut self, msg: GetVideoPath, ctx: &mut Context<Self>) -> Self::Result {
+        let yt_id = msg.yt_id;
+        match self.download_states.get(&yt_id) {
+            Some(finished) => {
+                if *finished {
+                    Ok(())
+                } else {
+                    Err(DownloadVideoResult::DownloadPending)
+                }
+            }
+            None => Err(DownloadVideoResult::NeverDownloaded),
+        }
+    }
+}
