@@ -485,14 +485,12 @@ impl Handler<CreateProject> for SmActor {
         let all_recipients_except =
             self.get_all_cloned_recipients_project_except(&project_name, id);
 
-        
-        let yt_ids: Vec<String> = project_videos.iter().map(|video| {
-            video.url.clone()
-        })
-        .collect();
-        let msg = crate::downloader::DownloadVideos{yt_ids};
+        let yt_ids: Vec<String> = project_videos
+            .iter()
+            .map(|video| video.url.clone())
+            .collect();
+        let msg = crate::downloader::DownloadVideos { yt_ids };
         let send_download_message = self.downloader.send(msg);
-
 
         let fut = async move {
             // Notify all users that a project have been created
