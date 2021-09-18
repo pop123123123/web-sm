@@ -8,22 +8,26 @@ use gst_pbutils::{
 
 type BoxResult = Result<(), Box<dyn std::error::Error>>;
 
-fn render_pipeline(pipeline: &ges::Pipeline, out_uri: &str) -> BoxResult {
+fn render_pipeline(
+    pipeline: &ges::Pipeline,
+    out_uri: &str,
+    out_caps: Option<&gst::Caps>,
+) -> BoxResult {
     let audio_profile = EncodingAudioProfileBuilder::new()
-        .format(&gst::Caps::new_simple("audio/x-vorbis", &[]))
+        .format(&gst::Caps::new_simple("audio/mpeg", &[]))
         .presence(0)
         .build()?;
 
     // Every videostream piped into the encodebin should be encoded using vp9.
     let video_profile = EncodingVideoProfileBuilder::new()
-        .format(&gst::Caps::new_simple("video/x-vp9", &[]))
+        .format(out_caps.unwrap_or(&gst::Caps::new_simple("video/x-h264", &[])))
         .presence(0)
         .build()?;
 
-    // All streams are then finally combined into a webm container.
+    // All streams are then finally combined into a mp4 container.
     let container_profile = EncodingContainerProfileBuilder::new()
         .name("container")
-        .format(&gst::Caps::new_simple("video/webm", &[]))
+        .format(&gst::Caps::new_simple("video/quicktime", &[]))
         .add_profile(&(video_profile))
         .add_profile(&(audio_profile))
         .build()?;
@@ -153,7 +157,7 @@ fn render_phonems(
         },
     )?;
 
-    render_pipeline(&pipeline, &uri)
+    render_pipeline(&pipeline, &uri, None)
 }
 
 pub fn render_main_video(
@@ -161,6 +165,10 @@ pub fn render_main_video(
     out_path: &std::path::Path,
     small: bool,
 ) -> BoxResult {
+    if out_path.exists() {
+        return Ok(());
+    }
+
     ges::init()?;
 
     let in_uri = format!("file://{}", in_path.to_str().unwrap());
@@ -195,11 +203,22 @@ pub fn render_main_video(
         asset.duration(),
         ges::TrackType::VIDEO | ges::TrackType::AUDIO,
     )?;
-    let effect = ges::Effect::new("videoscale").expect("Failed to create effect");
-    clip.add(&effect).unwrap();
-    clip.set_child_property("width", &(if small { 400 } else { 1920 }).to_value())?;
-    clip.set_child_property("height", &(if small { 225 } else { 1080 }).to_value())?;
-    clip.set_child_property("method", &"nearest".to_value())?;
+    if small {
+        let effect = ges::Effect::new("videoscale").expect("Failed to create effect");
+        clip.add(&effect).unwrap();
+        clip.set_child_property("width", &64i32.to_value())?;
+        clip.set_child_property("height", &36i32.to_value())?;
+        clip.set_child_property("method", &"nearest".to_value())?;
+    }
 
-    render_pipeline(&pipeline, &out_uri)
+    let caps = &gst::Caps::new_simple(
+        "video/x-h264",
+        if small {
+            &[("width", &64i32), ("height", &36i32)]
+        } else {
+            &[]
+        },
+    );
+
+    render_pipeline(&pipeline, &out_uri, Some(caps))
 }

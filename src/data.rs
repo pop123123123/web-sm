@@ -42,7 +42,7 @@ impl Video {
     pub fn get_path_full_resolution(&self) -> std::path::PathBuf {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(&self.url);
-        p.set_extension("webm");
+        p.set_extension("mp4");
         let pwd = std::env::current_dir().unwrap();
         pwd.join(p)
     }
@@ -50,7 +50,7 @@ impl Video {
     pub fn get_path_small(&self) -> std::path::PathBuf {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(format!("{}_small", self.url));
-        p.set_extension("webm");
+        p.set_extension("mp4");
         let pwd = std::env::current_dir().unwrap();
         pwd.join(p)
     }
@@ -152,14 +152,14 @@ impl<'a> PreviewId<'a> {
         let mut p = std::env::current_dir().expect("Could not access current directory");
         p.push(PREVIEW_FOLDER);
         p.push(self.file_name());
-        p.set_extension("webm");
+        p.set_extension("mp4");
         p
     }
     pub fn render_path(&self) -> std::path::PathBuf {
         let mut p = std::env::current_dir().expect("Could not access current directory");
         p.push(RENDER_FOLDER);
         p.push(self.file_name());
-        p.set_extension("webm");
+        p.set_extension("mp4");
         p
     }
 }
