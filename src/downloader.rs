@@ -1,8 +1,11 @@
 use crate::error::*;
 use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
 use actix::*;
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::fs::{self, DirEntry};
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::vec::Vec;
@@ -124,6 +127,21 @@ impl Handler<DownloadVideos> for DownloaderActor {
             }))
         };
         Box::pin(wrap_fut)
+    }
+}
+
+fn get_video_path(url: &str) -> Option<PathBuf> {
+    let pattern = format!(r"^.*{}..*$", url);
+    let re = Regex::new(&pattern).unwrap();
+
+    let found_path = fs::read_dir(".videos").unwrap().find(|entry| {
+        let path = entry.as_ref().unwrap().path();
+        let path_str = path.into_os_string().into_string().unwrap();
+        re.is_match(&path_str)
+    });
+    match found_path {
+        Some(entry) => Some(entry.as_ref().unwrap().path()),
+        None => None,
     }
 }
 
