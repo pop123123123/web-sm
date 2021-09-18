@@ -155,3 +155,51 @@ fn render_phonems(
 
     render_pipeline(&pipeline, &uri)
 }
+
+fn render_main_video(
+    in_path: &std::path::Path,
+    out_path: &std::path::Path,
+    small: bool,
+) -> BoxResult {
+    ges::init()?;
+
+    let in_uri = format!("file://{}", in_path.to_str().unwrap());
+    let out_uri = format!("file://{}", out_path.to_str().unwrap());
+
+    // Begin by creating a timeline with audio and video tracks
+    let timeline = ges::Timeline::new();
+
+    let video_caps = gst::Caps::new_simple("video/x-raw", &[]);
+    let audio_track = ges::Track::new(
+        ges::TrackType::AUDIO,
+        &gst::Caps::new_simple("audio/x-raw", &[]),
+    );
+    let video_track = ges::Track::new(ges::TrackType::VIDEO, &video_caps);
+    video_track.set_restriction_caps(&video_caps);
+
+    timeline.add_track(&video_track)?;
+    timeline.add_track(&audio_track)?;
+
+    // Create a new layer that will contain our timed clips.
+    let layer = timeline.append_layer();
+    let pipeline = ges::Pipeline::new();
+    pipeline.set_timeline(&timeline)?;
+
+    // TODO async
+    let asset = ges::UriClipAsset::request_sync(&in_uri).unwrap(); // TODO once per project
+
+    let clip = layer.add_asset(
+        &asset,
+        ClockTime::from_mseconds(0),
+        ClockTime::from_mseconds(0),
+        asset.duration(),
+        ges::TrackType::VIDEO | ges::TrackType::AUDIO,
+    )?;
+    let effect = ges::Effect::new("videoscale").expect("Failed to create effect");
+    clip.add(&effect).unwrap();
+    clip.set_child_property("width", &(if small { 400 } else { 1920 }).to_value())?;
+    clip.set_child_property("height", &(if small { 225 } else { 1080 }).to_value())?;
+    clip.set_child_property("method", &"nearest".to_value())?;
+
+    render_pipeline(&pipeline, &out_uri)
+}

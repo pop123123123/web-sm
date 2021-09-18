@@ -42,14 +42,14 @@ impl Video {
     pub fn get_path_full_resolution(&self) -> std::path::PathBuf {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(&self.url);
-        p.set_extension("mp4");
+        p.set_extension("webm");
         std::fs::canonicalize(p).unwrap()
     }
 
     pub fn get_path_small(&self) -> std::path::PathBuf {
         let mut p = std::path::PathBuf::from(VIDEO_PATH);
         p.push(format!("{}_small", self.url));
-        p.set_extension("mp4");
+        p.set_extension("webm");
         std::fs::canonicalize(p).unwrap()
     }
 }
