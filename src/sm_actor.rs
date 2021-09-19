@@ -31,24 +31,57 @@ macro_rules! async_run_preview {
 
             if $preview {
                 // Prepare preview and sends it
-                let res = sm::analyze(&$project, &$segment.sentence).await;
-                let combos = res.unwrap();
+                match sm::analyze(&$project, &$segment.sentence).await {
+                    Ok(combos) => {
+                        let videos = $fut_videos.await;
+                        if videos.is_ok() {
+                            // If not, mailboox is full and we should just ignore this
+                            let videos = videos.unwrap();
 
-                let videos = $fut_videos.await.unwrap().unwrap();
+                            match videos {
+                                Ok(videos) => {
+                                    // TODO: run n first previews
+                                    let res = crate::renderer::preview(
+                                        &videos,
+                                        &combos[$segment.combo_index as usize],
+                                    );
 
-                // TODO: run n first previews
-                let res = crate::renderer::preview(&videos, &combos[$segment.combo_index as usize]);
-                let path = res.unwrap();
-
-                let bytes = async_fs::read(path).await.unwrap();
-
-                let decoder = base64::encode(bytes);
-                let data = decoder.to_owned();
-                let r = ServerRequest::Preview {
-                    segment: $segment,
-                    data,
-                };
-                broadcast(r, &$recipients).await;
+                                    match res {
+                                        Ok(path) => {
+                                            match async_fs::read(path).await {
+                                                Ok(bytes) => {
+                                                    let decoder = base64::encode(bytes);
+                                                    let data = decoder.to_owned();
+                                                    let r = ServerRequest::Preview {
+                                                        segment: $segment,
+                                                        data,
+                                                    };
+                                                    broadcast(r, &$recipients).await;
+                                                }
+                                                Err(err) => {
+                                                    // TODO: cannot find the preview in filesystem
+                                                    // We should probably re-compute the preview
+                                                }
+                                            }
+                                        }
+                                        Err(err) => {
+                                            // TODO: fail from the preview
+                                            // We should probably retry
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    // TODO: videos are getting downloaded
+                                    // We should just ignore and wait
+                                    // Maybe send a message to the client to notify that
+                                }
+                            }
+                        }
+                    }
+                    Err(ambiguity) => {
+                        // TODO: send error back to client
+                    }
+                }
             }
         }
     };
@@ -550,7 +583,14 @@ impl Handler<CreateProject> for SmActor {
             )
             .await;
 
-            send_download_message.await.unwrap().unwrap();
+            let res_dl = send_download_message.await;
+            if res_dl.is_ok() {
+                let res_dl = res_dl.unwrap();
+
+                if res_dl.is_err() {
+                    // TODO: true fallback
+                }
+            }
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
