@@ -32,6 +32,10 @@ macro_rules! async_run_preview {
             if $preview {
                 // Prepare preview and sends it
                 match sm::analyze(&$project, &$segment.sentence).await {
+                    Err(ambiguity) => {
+                        println!("{} triggered ambiguity error", ambiguity.word);
+                        // TODO: send error back to client
+                    }
                     Ok(combos) => {
                         let videos = $fut_videos.await;
                         if videos.is_ok() {
@@ -39,6 +43,11 @@ macro_rules! async_run_preview {
                             let videos = videos.unwrap();
 
                             match videos {
+                                Err(_) => {
+                                    println!("Video downloading is pending, cannot generate the preview yet");
+                                    // TODO: We should just ignore and wait
+                                    // Maybe send a message to the client to notify that
+                                }
                                 Ok(videos) => {
                                     // TODO: run n first previews
                                     let res = crate::renderer::preview(
@@ -47,8 +56,16 @@ macro_rules! async_run_preview {
                                     );
 
                                     match res {
+                                        Err(_) => {
+                                            println!("Error while generating the preview");
+                                            // TODO: We should probably retry
+                                        }
                                         Ok(path) => {
                                             match async_fs::read(path).await {
+                                                Err(_) => {
+                                                    println!("Cannot find preview in filesystem");
+                                                    // TODO: We should probably re-compute the preview
+                                                }
                                                 Ok(bytes) => {
                                                     let decoder = base64::encode(bytes);
                                                     let data = decoder.to_owned();
@@ -58,29 +75,12 @@ macro_rules! async_run_preview {
                                                     };
                                                     broadcast(r, &$recipients).await;
                                                 }
-                                                Err(_) => {
-                                                    println!("Cannot find preview in filesystem");
-                                                    // TODO: We should probably re-compute the preview
-                                                }
                                             }
-                                        }
-                                        Err(_) => {
-                                            println!("Error while generating the preview");
-                                            // TODO: We should probably retry
                                         }
                                     }
                                 }
-                                Err(_) => {
-                                    println!("Video downloading is pending, cannot generate the preview yet");
-                                    // TODO: We should just ignore and wait
-                                    // Maybe send a message to the client to notify that
-                                }
                             }
                         }
-                    }
-                    Err(ambiguity) => {
-                        println!("{} triggered ambiguity error", ambiguity.word);
-                        // TODO: send error back to client
                     }
                 }
             }
@@ -842,31 +842,12 @@ impl Handler<Export> for SmActor {
                 .collect();
 
             match fut_videos.await {
+                Err(_) => {
+                    println!("Mailbox full. Cannot export");
+                    // TODO: mailbox full. What should we do ?
+                }
                 Ok(videos_res) => {
                     match videos_res {
-                        Ok(videos) => {
-                            match crate::renderer::render(&videos, &combos) {
-                                Ok(path) => {
-                                    match async_fs::read(path).await {
-                                        Ok(bytes) => {
-                                            let decoder = base64::encode(bytes);
-                                            let data = decoder.to_owned();
-                                            let hash = hash_segments(&project.segments);
-                                            let r = ServerRequest::RenderResult { hash, data };
-                                            broadcast(r, &recipients).await;
-                                        }
-                                        Err(_) => {
-                                            println!("Cannot find preview in filesystem");
-                                            // TODO: We should notify the user
-                                        }
-                                    };
-                                }
-                                Err(_) => {
-                                    println!("Error while generating the preview");
-                                    // TODO: We should notify the user
-                                }
-                            };
-                        }
                         Err(_) => {
                             println!(
                                 "Video downloading is pending, cannot generate the preview yet"
@@ -874,11 +855,30 @@ impl Handler<Export> for SmActor {
                             // TODO: We should just ignore and wait
                             // Maybe send a message to the client to notify that
                         }
+                        Ok(videos) => {
+                            match crate::renderer::render(&videos, &combos) {
+                                Err(_) => {
+                                    println!("Error while generating the preview");
+                                    // TODO: We should notify the user
+                                }
+                                Ok(path) => {
+                                    match async_fs::read(path).await {
+                                        Err(_) => {
+                                            println!("Cannot find preview in filesystem");
+                                            // TODO: We should notify the user
+                                        }
+                                        Ok(bytes) => {
+                                            let decoder = base64::encode(bytes);
+                                            let data = decoder.to_owned();
+                                            let hash = hash_segments(&project.segments);
+                                            let r = ServerRequest::RenderResult { hash, data };
+                                            broadcast(r, &recipients).await;
+                                        }
+                                    };
+                                }
+                            };
+                        }
                     };
-                }
-                Err(_) => {
-                    println!("Mailbox full. Cannot export");
-                    // TODO: mailbox full. What should we do ?
                 }
             }
         };
