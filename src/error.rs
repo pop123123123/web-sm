@@ -15,4 +15,13 @@ pub enum ServerError {
     CommunicationError,
 }
 
+#[derive(Debug)]
+pub enum DownloaderError {
+    DownloadFailedError,
+    VideosFolderNotExistError,
+    DowloadedVideoNotFoundError,
+    RenderingError,
+    BrokenRenderedVideo,
+}
+
 // impl std::error::Error for ServerError {}

@@ -16,7 +16,7 @@ pub struct DownloadVideos {
     pub yt_ids: Vec<YoutubeId>,
 }
 impl actix::Message for DownloadVideos {
-    type Result = Result<(), ServerError>;
+    type Result = Result<(), DownloaderError>;
 }
 
 #[derive(Deserialize)]
@@ -92,7 +92,7 @@ impl Actor for DownloaderActor {
 }
 
 impl Handler<DownloadVideos> for DownloaderActor {
-    type Result = ResponseActFuture<Self, Result<(), ServerError>>;
+    type Result = ResponseActFuture<Self, Result<(), DownloaderError>>;
 
     fn handle(&mut self, msg: DownloadVideos, _ctx: &mut Context<Self>) -> Self::Result {
         let wrap_fut = if msg
@@ -110,67 +110,80 @@ impl Handler<DownloadVideos> for DownloaderActor {
                  actor: &mut DownloaderActor,
                  _ctx| match result {
                     Ok(yt_ids) => {
-                        yt_ids.iter().for_each(|yt_id| {
+                        yt_ids.iter().try_for_each(|yt_id| {
                             actor.download_states.insert(yt_id.clone(), true);
 
-                            let path = get_video_path(yt_id).unwrap();
+                            let path = get_video_path(yt_id);
+                            // Error while getting video path
+                            let path =
+                                path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
+                            if path.is_none() {
+                                // No video file matching this video was found
+                                return Err(DownloaderError::DowloadedVideoNotFoundError);
+                            };
+                            let path = path.unwrap();
+
                             crate::renderer::render_main_video(
                                 path.as_path(),
                                 crate::data::get_video_path(&yt_id.id, false).as_path(),
                                 false,
                             )
-                            .unwrap();
+                            .map_err(|_| DownloaderError::RenderingError)?;
                             crate::renderer::render_main_video(
                                 path.as_path(),
                                 crate::data::get_video_path(&yt_id.id, true).as_path(),
                                 true,
                             )
-                            .unwrap();
+                            .map_err(|_| DownloaderError::RenderingError)?;
 
-                            let vid = Arc::new(Video::from(yt_id.clone()).unwrap());
+                            let vid = Arc::new(
+                                Video::from(yt_id.clone())
+                                    .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
+                            );
                             actor.videos.insert(yt_id.clone(), vid);
-                        });
 
-                        Ok(())
+                            Ok(())
+                        })
                     }
                     Err(yt_ids) => {
                         yt_ids.iter().for_each(|yt_id| {
                             actor.download_states.remove(yt_id);
                         });
-                        todo!(
-                            "Check which videos are correctly downloaded, and which videos are not"
-                        );
-                        Err(ServerError::CommunicationError)
+                        // TODO: Check which videos are correctly downloaded, and which videos are not
+                        Err(DownloaderError::DownloadFailedError)
                     }
                 },
             );
             fut::Either::Left(mapped_download)
         } else {
-            fut::Either::Right(actix::fut::wrap_future(async {
-                Ok(())
-                // if msg.yt_ids.into_iter().all(|url| get_video(&url).is_none()) {
-                //     Ok(())
-                // } else {
-                //     Ok(())
-                // }
-            }))
+            fut::Either::Right(actix::fut::wrap_future(async { Ok(()) }))
         };
         Box::pin(wrap_fut)
     }
 }
 
-fn get_video_path(id: &YoutubeId) -> Option<PathBuf> {
+fn get_video_path(id: &YoutubeId) -> std::io::Result<Option<PathBuf>> {
     let pattern = format!(r"^.*{}..*$", id.id);
-    let re = Regex::new(&pattern).unwrap();
+    let re = Regex::new(&pattern).unwrap(); // unwrap fails if the pattern is invalid. Our pattern is static so never invalid
 
-    let found_path = fs::read_dir(".videos").unwrap().find(|entry| {
-        let path = entry.as_ref().unwrap().path();
-        let path_str = path.into_os_string().into_string().unwrap();
-        re.is_match(&path_str)
+    let found_path = fs::read_dir(".videos")?.find(|entry| {
+        let entry = entry.as_ref();
+        if entry.is_err() {
+            // Any IO error with read file
+            return false;
+        }
+        let path = entry.unwrap().path();
+        let path_str = path.into_os_string().into_string();
+        if entry.is_err() {
+            // Non-unicode character
+            return false;
+        }
+        re.is_match(&path_str.unwrap())
     });
     match found_path {
-        Some(entry) => Some(entry.as_ref().unwrap().path().canonicalize().unwrap()),
-        None => None,
+        // Both unwraps are validated by the find closure
+        Some(entry) => Ok(Some(entry.as_ref().unwrap().path().canonicalize().unwrap())),
+        None => Ok(None),
     }
 }
 
@@ -188,6 +201,7 @@ impl Handler<GetVideos> for DownloaderActor {
                 Some(_) => Err(DownloadVideoStatus::DownloadPending),
                 None => Err(DownloadVideoStatus::NeverDownloaded),
             },
+            // unwrap validated since we know that v.is_ok is true
             None => Ok(videos.into_iter().map(|v| (*v.unwrap()).clone()).collect()),
         }
     }
