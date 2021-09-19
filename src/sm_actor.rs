@@ -824,7 +824,12 @@ impl Handler<Export> for SmActor {
                 .iter()
                 .map(|s| sm::analyze(&project, &s.sentence));
             let res: Vec<_> = futures::future::join_all(analysis).await;
-            let res: Vec<_> = res.iter().map(|c| c.as_ref().unwrap()).collect();
+            // Throw away all failed analysis (because of ambiguities) and keep all the others
+            let res: Vec<_> = res
+                .iter()
+                .filter(|c| c.as_ref().is_ok())
+                .map(|c| c.as_ref().unwrap())
+                .collect();
 
             let combos: Vec<_> = res
                 .iter()
@@ -837,17 +842,43 @@ impl Handler<Export> for SmActor {
                 .flatten()
                 .collect();
 
-            let videos = fut_videos.await.unwrap().unwrap();
-            let res = crate::renderer::render(&videos, &combos);
-            let path = res.unwrap();
-
-            let bytes = async_fs::read(path).await.unwrap();
-
-            let decoder = base64::encode(bytes);
-            let data = decoder.to_owned();
-            let hash = hash_segments(&project.segments);
-            let r = ServerRequest::RenderResult { hash, data };
-            broadcast(r, &recipients).await;
+            match fut_videos.await {
+                Ok(videos_res) => {
+                    match videos_res {
+                        Ok(videos) => {
+                            match crate::renderer::render(&videos, &combos) {
+                                Ok(path) => {
+                                    match async_fs::read(path).await {
+                                        Ok(bytes) => {
+                                            let decoder = base64::encode(bytes);
+                                            let data = decoder.to_owned();
+                                            let hash = hash_segments(&project.segments);
+                                            let r = ServerRequest::RenderResult { hash, data };
+                                            broadcast(r, &recipients).await;
+                                        }
+                                        Err(_) => {
+                                            // TODO: cannot find the rendered video in filesystem
+                                            // We should notify the user
+                                        }
+                                    };
+                                }
+                                Err(_) => {
+                                    // TODO: error while rendering the video
+                                    // We should notify the user
+                                }
+                            };
+                        }
+                        Err(_) => {
+                            // TODO: videos are getting downloaded
+                            // We should just ignore and wait
+                            // Maybe send a message to the client to notify that
+                        }
+                    };
+                }
+                Err(_) => {
+                    // TODO: mailbox full. What should we do ?
+                }
+            }
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
