@@ -63,25 +63,32 @@ pub fn get_video_path(yt_id: &str, small: bool) -> std::path::PathBuf {
         yt_id.to_owned()
     });
     p.set_extension("mp4");
-    let pwd = std::env::current_dir().unwrap();
+    let pwd = std::env::current_dir().unwrap(); // Checked at the beginning
     pwd.join(p)
 }
 
+#[derive(Debug)]
+pub enum VideoError {
+    BadPath, // Invalid unicode
+    CannotReadFile,
+}
 impl Video {
-    pub fn new(id: YoutubeId) -> Self {
+    pub fn from(id: YoutubeId) -> Result<Self, VideoError> {
         let in_path = get_video_path(&id.id, false);
-        let in_uri = format!("file://{}", in_path.to_str().unwrap());
-        let asset = ges::UriClipAsset::request_sync(&in_uri).unwrap();
+        let in_uri = format!("file://{}", in_path.to_str().ok_or(VideoError::BadPath)?);
+        let asset =
+            ges::UriClipAsset::request_sync(&in_uri).map_err(|_| VideoError::CannotReadFile)?;
 
         let in_path = get_video_path(&id.id, true);
-        let in_uri = format!("file://{}", in_path.to_str().unwrap());
-        let lite_asset = ges::UriClipAsset::request_sync(&in_uri).unwrap();
+        let in_uri = format!("file://{}", in_path.to_str().ok_or(VideoError::BadPath)?);
+        let lite_asset =
+            ges::UriClipAsset::request_sync(&in_uri).map_err(|_| VideoError::CannotReadFile)?;
 
-        Video {
+        Ok(Video {
             id,
             asset,
             lite_asset,
-        }
+        })
     }
 
     pub fn get_path_full_resolution(&self) -> std::path::PathBuf {

@@ -39,7 +39,7 @@ fn render_pipeline(
 
     pipeline.set_state(gst::State::Playing)?;
 
-    let bus = pipeline.bus().unwrap();
+    let bus = pipeline.bus().ok_or("No bus")?;
     for msg in bus.iter_timed(gst::ClockTime::NONE) {
         use gst::MessageView;
 
@@ -107,7 +107,12 @@ fn render_phonems(
 ) -> BoxResult {
     ges::init()?; // TODO: peut etre l'enlever ?
 
-    let uri = format!("file://{}", out_path.to_str().unwrap());
+    let uri = format!(
+        "file://{}",
+        out_path
+            .to_str()
+            .ok_or("Output path is not valid unicode")?
+    );
 
     // Begin by creating a timeline with audio and video tracks
     let timeline = ges::Timeline::new();
@@ -148,7 +153,7 @@ fn render_phonems(
                 ges::TrackType::VIDEO | ges::TrackType::AUDIO,
             )?;
             // let effect = ges::Effect::new("head_tracking").expect("Failed to create effect");
-            // clip.add(&effect).unwrap();
+            // clip.add(&effect)?;
             Ok(timeline_start_ms + duration_ms)
         },
     )?;
@@ -167,8 +172,14 @@ pub fn render_main_video(
 
     ges::init()?;
 
-    let in_uri = format!("file://{}", in_path.to_str().unwrap());
-    let out_uri = format!("file://{}", out_path.to_str().unwrap());
+    let in_uri = format!(
+        "file://{}",
+        in_path.to_str().ok_or("Input path is not valid unicode")?
+    );
+    let out_uri = format!(
+        "file://{}",
+        out_path.to_str().ok_or("Input path is not valid unicode")?
+    );
 
     // Begin by creating a timeline with audio and video tracks
     let timeline = ges::Timeline::new();
@@ -190,7 +201,7 @@ pub fn render_main_video(
     pipeline.set_timeline(&timeline)?;
 
     // TODO async
-    let asset = ges::UriClipAsset::request_sync(&in_uri).unwrap(); // TODO once per project
+    let asset = ges::UriClipAsset::request_sync(&in_uri)?;
 
     let clip = layer.add_asset(
         &asset,
@@ -201,7 +212,7 @@ pub fn render_main_video(
     )?;
     if small {
         let effect = ges::Effect::new("videoscale").expect("Failed to create effect");
-        clip.add(&effect).unwrap();
+        clip.add(&effect)?;
         clip.set_child_property("width", &64i32.to_value())?;
         clip.set_child_property("height", &36i32.to_value())?;
         clip.set_child_property("method", &"nearest".to_value())?;

@@ -16,6 +16,11 @@ mod youtube_dl;
 const FRONTEND_PATH: &str = "./front/dist/";
 const INDEX_PATH: &str = "./front/dist/index.html";
 
+fn init() {
+    ges::init().unwrap();
+    std::env::current_dir().unwrap();
+}
+
 #[get("/test")]
 async fn test() -> impl Responder {
     let p = data::Project::new("lol", "4", &["_ZZ8oyZUGn8".to_string()]);
@@ -23,13 +28,20 @@ async fn test() -> impl Responder {
     match res {
         Ok(analysis_results) => {
             let phs = &analysis_results[0];
-            // let res = crate::renderer::render(&p.video_ids, phs);
-            let vid = Arc::new(crate::data::Video::new(crate::data::YoutubeId {
+            let vid = crate::data::Video::from(crate::data::YoutubeId {
                 id: "_ZZ8oyZUGn8".to_owned(),
-            }));
-            let res = crate::renderer::preview(&[vid], phs);
-            res.unwrap();
-            HttpResponse::Ok().json(&*analysis_results)
+            });
+            match vid {
+                Err(_) => HttpResponse::InternalServerError().finish(),
+                Ok(vid) => {
+                    let vid = Arc::new(vid);
+                    let res = crate::renderer::preview(&[vid], phs);
+                    match res {
+                        Ok(_) => HttpResponse::Ok().json(&*analysis_results),
+                        Err(_) => HttpResponse::InternalServerError().finish(),
+                    }
+                },
+            }
         }
         Err(e) => HttpResponse::BadRequest().json(&e),
     }
@@ -38,8 +50,6 @@ async fn test() -> impl Responder {
 /// Run actix web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    ges::init().unwrap();
-
     let port = std::env::var("PORT")
         .unwrap_or_else(|_| "3333".to_string())
         .parse()

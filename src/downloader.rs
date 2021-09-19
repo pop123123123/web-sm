@@ -127,7 +127,7 @@ impl Handler<DownloadVideos> for DownloaderActor {
                             )
                             .unwrap();
 
-                            let vid = Arc::new(Video::new(yt_id.clone()));
+                            let vid = Arc::new(Video::from(yt_id.clone()).unwrap());
                             actor.videos.insert(yt_id.clone(), vid);
                         });
 

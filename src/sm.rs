@@ -19,7 +19,7 @@ static ANALYSIS_CACHE: Lazy<RwLock<AnalysisCache>> =
     Lazy::new(|| RwLock::new(AnalysisCache::new()));
 
 fn add_in_cache(key: AnalysisId, val: Arc<AnalysisResult>) {
-    ANALYSIS_CACHE.read().unwrap().insert(key, val);
+    ANALYSIS_CACHE.read().unwrap().insert(key, val); // panics if panic already happened
 }
 
 pub async fn analyze(
@@ -28,6 +28,7 @@ pub async fn analyze(
 ) -> Result<Arc<AnalysisResult>, AmbiguityError> {
     let hash_key = AnalysisId::from_project_sentence(project, sentence);
     match ANALYSIS_CACHE.read().unwrap().get(&hash_key) {
+        // panics if panic already happened
         Some(result) => Ok((*result).clone()),
         None => {
             let urls = project
@@ -45,7 +46,12 @@ pub async fn analyze(
 
             let err_data = output.stderr;
             let out_data = output.stdout;
-            let res: serde_json::Result<AnalysisResult> = serde_json::from_slice(&out_data);
+            let first = out_data[..(out_data.len() - 1)]
+                .iter()
+                .rposition(|x| *x == 0xa)
+                .unwrap_or(0);
+            let res: serde_json::Result<AnalysisResult> =
+                serde_json::from_slice(&out_data[first..]);
             let res = res.map(|res| {
                 let boxed = Arc::new(res);
                 add_in_cache(hash_key, boxed.clone());
@@ -56,9 +62,9 @@ pub async fn analyze(
                     match serde_json::from_slice(&out_data) {
                         Ok(res) => res,
                         Err(_) => panic!(
-                            "{}{}",
-                            String::from_utf8(out_data).unwrap(),
-                            String::from_utf8(err_data).unwrap()
+                            "STDOUT\n{}\n\nSTDERR\n{}",
+                            String::from_utf8(out_data).unwrap(), // panics in panic
+                            String::from_utf8(err_data).unwrap(), // panics in panic
                         ),
                     }
                 });
