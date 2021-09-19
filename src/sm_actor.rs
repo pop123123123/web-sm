@@ -855,7 +855,7 @@ impl Handler<Export> for SmActor {
 
             let rendering = crate::renderer::render(&videos, &combos);
             if let Err(_) = rendering {
-                println!("Error while generating the preview");
+                println!("Error while generating the rendered video");
                 // TODO: We should notify the user
                 return;
             }
@@ -863,7 +863,7 @@ impl Handler<Export> for SmActor {
 
             let bytes = async_fs::read(path).await;
             if let Err(_) = bytes {
-                println!("Cannot find preview in filesystem");
+                println!("Cannot find rendered video in filesystem");
                 // TODO: We should notify the user
                 return;
             }
