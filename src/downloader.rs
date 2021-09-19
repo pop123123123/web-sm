@@ -48,7 +48,7 @@ impl DownloaderActor {
     }
 }
 
-async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<Vec<YoutubeId>, Vec<YoutubeId>> {
+async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), ()> {
     let args = vec![Arg::new_with_arg("--output", "%(id)s")];
 
     // Align all the urls on a same string
@@ -77,14 +77,14 @@ async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<Vec<YoutubeId>, Vec<Y
                     "Videos downloaded: {}",
                     download.output_dir().to_string_lossy()
                 );
-                return Ok(yt_ids);
+                return Ok(());
             }
             ResultType::IOERROR | ResultType::FAILURE => {
                 println!("Couldn't start download: {}", download.output())
             }
         };
     }
-    Err(yt_ids)
+    Err(())
 }
 
 impl Actor for DownloaderActor {
@@ -104,12 +104,12 @@ impl Handler<DownloadVideos> for DownloaderActor {
                 self.download_states.insert(yt_id.clone(), false);
             });
 
+            let yt_ids = msg.yt_ids.clone();
+
             let wrap_download = actix::fut::wrap_future(download_videos(msg.yt_ids));
             let mapped_download = wrap_download.map(
-                |result: Result<Vec<YoutubeId>, Vec<YoutubeId>>,
-                 actor: &mut DownloaderActor,
-                 _ctx| match result {
-                    Ok(yt_ids) => {
+                move |result: Result<(), ()>, actor: &mut DownloaderActor, _ctx| match result {
+                    Ok(()) => {
                         yt_ids.iter().try_for_each(|yt_id| {
                             actor.download_states.insert(yt_id.clone(), true);
 
@@ -145,7 +145,7 @@ impl Handler<DownloadVideos> for DownloaderActor {
                             Ok(())
                         })
                     }
-                    Err(yt_ids) => {
+                    Err(()) => {
                         yt_ids.iter().for_each(|yt_id| {
                             actor.download_states.remove(yt_id);
                         });

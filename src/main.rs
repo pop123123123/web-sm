@@ -40,7 +40,7 @@ async fn test() -> impl Responder {
                         Ok(_) => HttpResponse::Ok().json(&*analysis_results),
                         Err(_) => HttpResponse::InternalServerError().finish(),
                     }
-                },
+                }
             }
         }
         Err(e) => HttpResponse::BadRequest().json(&e),
