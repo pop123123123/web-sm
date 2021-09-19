@@ -52,21 +52,15 @@ async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), DownloaderError> 
     let args = vec![Arg::new_with_arg("--output", "%(id)s")];
 
     // Align all the urls on a same string
-    let mut inline_urls = yt_ids.iter().fold(String::from(""), |mut full_str, yt_id| {
-        full_str.push_str(&yt_id.id);
-        full_str.push_str(" ");
-        full_str
-    });
-
-    inline_urls.pop(); // Remove last superfluous " "
+    let urls: Vec<_> = yt_ids.into_iter().map(|yt_id| yt_id.id).collect();
 
     let path = PathBuf::from("./.videos");
-    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone())
+    let ytd = YoutubeDL::new_multiple_links(&path, args, urls.clone())
         .map_err(|_| DownloaderError::YoutubeDlCmdNotFoundError)?;
 
     let max_tries: u8 = 5;
     for i_try in 0..max_tries {
-        println!("Downloading videos {}. Try {}", inline_urls, i_try);
+        println!("Downloading videos {:?}. Try {}", urls, i_try);
 
         // start download
         let download = ytd.download().await;

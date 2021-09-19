@@ -1,5 +1,5 @@
 use crate::data::PreviewId;
-use crate::data::{Project, ProjectId, Seed, Segment, Preview};
+use crate::data::{Preview, Project, ProjectId, Seed, Segment};
 use crate::downloader::GetVideos;
 use crate::error::*;
 use crate::messages::ServerRequest;
