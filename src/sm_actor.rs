@@ -25,15 +25,18 @@ macro_rules! clone_segment {
 }
 
 macro_rules! async_run_preview {
-    ($request:expr, $recipients:expr, $project:expr, $segment:expr, $fut_videos: expr, $preview: expr) => {
+    ($request:expr, $recipients:expr, $project:expr, $segment:expr, $fut_videos: expr, $preview: expr, $segment_position: expr) => {
         async move {
             broadcast($request, &$recipients).await;
             // Prepare preview and sends it
             if $preview {
                 let combos = sm::analyze(&$project, &$segment.sentence).await;
                 if let Err(ambiguity) = combos {
-                    println!("{} triggered ambiguity error", ambiguity.word);
-                    // TODO: send error back to client
+                    let request = ServerRequest::AmbiguityToken {
+                        token: ambiguity.word,
+                        row: $segment_position,
+                    };
+                    broadcast(request, &$recipients).await;
                     return;
                 }
                 let combos = combos.unwrap();
@@ -94,7 +97,15 @@ macro_rules! send_broadcast_async_preview {
             yt_ids: project.video_ids.clone(),
         });
 
-        async_run_preview!($request, recipients, project, segment, fut_videos, $preview)
+        async_run_preview!(
+            $request,
+            recipients,
+            project,
+            segment,
+            fut_videos,
+            $preview,
+            $segment_position
+        )
     }};
 }
 
@@ -692,7 +703,7 @@ impl Handler<CreateSegment> for SmActor {
         let fut = send_broadcast_async_preview!(
             self,
             project_name,
-            position,
+            position as usize,
             request,
             !segment_sentence.trim().is_empty()
         );
@@ -726,8 +737,13 @@ impl Handler<ModifySegmentSentence> for SmActor {
             Err(e) => return Err(e),
         };
 
-        let fut =
-            send_broadcast_async_preview!(self, project_name, segment_position, request, true);
+        let fut = send_broadcast_async_preview!(
+            self,
+            project_name,
+            segment_position as usize,
+            request,
+            true
+        );
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
@@ -756,8 +772,13 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             Err(e) => return Err(e),
         };
 
-        let fut =
-            send_broadcast_async_preview!(self, project_name, segment_position, request, true);
+        let fut = send_broadcast_async_preview!(
+            self,
+            project_name,
+            segment_position as usize,
+            request,
+            true
+        );
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 

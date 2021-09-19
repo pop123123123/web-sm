@@ -74,4 +74,8 @@ pub enum ServerRequest {
         hash: String,
         data: String,
     },
+    AmbiguityToken {
+        row: usize,
+        token: String,
+    },
 }
