@@ -50,6 +50,7 @@ async fn test() -> impl Responder {
 /// Run actix web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    init();
     let port = std::env::var("PORT")
         .unwrap_or_else(|_| "3333".to_string())
         .parse()

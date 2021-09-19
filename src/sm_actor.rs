@@ -25,35 +25,37 @@ macro_rules! clone_segment {
 }
 
 macro_rules! async_run_preview {
-    ($request:expr, $recipients:expr, $project:expr, $segment:expr, $fut_videos: expr) => {
+    ($request:expr, $recipients:expr, $project:expr, $segment:expr, $fut_videos: expr, $preview: expr) => {
         async move {
             broadcast($request, &$recipients).await;
 
-            // Prepare preview and sends it
-            let res = sm::analyze(&$project, &$segment.sentence).await;
-            let combos = res.unwrap();
+            if $preview {
+                // Prepare preview and sends it
+                let res = sm::analyze(&$project, &$segment.sentence).await;
+                let combos = res.unwrap();
 
-            let videos = $fut_videos.await.unwrap().unwrap();
+                let videos = $fut_videos.await.unwrap().unwrap();
 
-            // TODO: run n first previews
-            let res = crate::renderer::preview(&videos, &combos[$segment.combo_index as usize]);
-            let path = res.unwrap();
+                // TODO: run n first previews
+                let res = crate::renderer::preview(&videos, &combos[$segment.combo_index as usize]);
+                let path = res.unwrap();
 
-            let bytes = async_fs::read(path).await.unwrap();
+                let bytes = async_fs::read(path).await.unwrap();
 
-            let decoder = base64::encode(bytes);
-            let data = decoder.to_owned();
-            let r = ServerRequest::Preview {
-                segment: $segment,
-                data,
-            };
-            broadcast(r, &$recipients).await;
+                let decoder = base64::encode(bytes);
+                let data = decoder.to_owned();
+                let r = ServerRequest::Preview {
+                    segment: $segment,
+                    data,
+                };
+                broadcast(r, &$recipients).await;
+            }
         }
     };
 }
 
 macro_rules! send_broadcast_async_preview {
-    ($self:expr, $project_name: expr, $segment_position: expr, $request: expr) => {{
+    ($self:expr, $project_name: expr, $segment_position: expr, $request: expr, $preview: expr) => {{
         let recipients = $self.get_all_cloned_recipients_project(&$project_name);
 
         let segment = clone_segment!($self, $project_name, $segment_position);
@@ -63,7 +65,7 @@ macro_rules! send_broadcast_async_preview {
             yt_ids: project.video_ids.clone(),
         });
 
-        async_run_preview!($request, recipients, project, segment, fut_videos)
+        async_run_preview!($request, recipients, project, segment, fut_videos, $preview)
     }};
 }
 
@@ -74,7 +76,7 @@ pub struct SmMessage(pub String);
 
 impl From<&ServerRequest> for SmMessage {
     fn from(request: &ServerRequest) -> SmMessage {
-        let data = serde_json::to_string(request).unwrap();
+        let data = serde_json::to_string(request).unwrap(); // Good
         SmMessage(data)
     }
 }
@@ -592,11 +594,11 @@ async fn user_join_project_async(
 ) {
     // Send the list of joined users to the user
     let m = SmMessage::from(&request_joined_users);
-    user_recipient_clone.send(m).await.unwrap();
+    user_recipient_clone.send(m).await.ok();
 
     // Add user on the project
     let m = SmMessage::from(&request_user_change_server);
-    user_recipient_clone.send(m).await.unwrap();
+    user_recipient_clone.send(m).await.ok();
 
     // Notify all the other project's users
     broadcast(request_notify_join, &all_recipients_except).await;
@@ -652,40 +654,13 @@ impl Handler<CreateSegment> for SmActor {
                 Err(e) => return Err(e),
             };
 
-        let recipients = self.get_all_cloned_recipients_project(&project_name);
-
-        let segment = clone_segment!(self, project_name, position);
-        let project = clone_project!(self, project_name);
-
-        let fut_videos = self.downloader.send(GetVideos {
-            yt_ids: project.video_ids.clone(),
-        });
-
-        let fut = async move {
-            // Send the notification to all involved sessions
-            broadcast(request, &recipients).await;
-
-            // TODO: really think about that issue
-            if !segment_sentence.trim().is_empty() {
-                let res = sm::analyze(&project, &segment_sentence).await;
-
-                let combos = res.unwrap();
-
-                let videos = fut_videos.await.unwrap().unwrap();
-
-                // TODO: run n first previews
-                let res = crate::renderer::preview(&videos, &combos[segment.combo_index as usize]);
-                let path = res.unwrap();
-
-                let bytes = async_fs::read(path).await.unwrap();
-
-                let decoder = base64::encode(bytes);
-                let data = decoder.to_owned();
-                let r = ServerRequest::Preview { segment, data };
-
-                broadcast(r, &recipients).await;
-            }
-        };
+        let fut = send_broadcast_async_preview!(
+            self,
+            project_name,
+            position,
+            request,
+            !segment_sentence.trim().is_empty()
+        );
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
@@ -716,7 +691,8 @@ impl Handler<ModifySegmentSentence> for SmActor {
             Err(e) => return Err(e),
         };
 
-        let fut = send_broadcast_async_preview!(self, project_name, segment_position, request);
+        let fut =
+            send_broadcast_async_preview!(self, project_name, segment_position, request, true);
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
@@ -745,7 +721,8 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             Err(e) => return Err(e),
         };
 
-        let fut = send_broadcast_async_preview!(self, project_name, segment_position, request);
+        let fut =
+            send_broadcast_async_preview!(self, project_name, segment_position, request, true);
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
