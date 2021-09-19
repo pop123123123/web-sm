@@ -339,6 +339,11 @@ impl SmActor {
         project_name: ProjectId,
         user: ClientId,
     ) -> Result<(ServerRequest, ServerRequest, ServerRequest), ServerError> {
+        // Check if project exists
+        if self.projects.get(&project_name.clone()).is_none() {
+            return Err(ServerError::ProjectDoesNotExist);
+        }
+
         let users = &self.editing_sessions[&project_name];
         if users.contains(&user) {
             return Err(ServerError::UserAlreadyJoinedProject);
