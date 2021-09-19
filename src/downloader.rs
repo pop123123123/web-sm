@@ -48,7 +48,7 @@ impl DownloaderActor {
     }
 }
 
-async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), ()> {
+async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), DownloaderError> {
     let args = vec![Arg::new_with_arg("--output", "%(id)s")];
 
     // Align all the urls on a same string
@@ -61,7 +61,8 @@ async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), ()> {
     inline_urls.pop(); // Remove last superfluous " "
 
     let path = PathBuf::from("./.videos");
-    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone()).unwrap();
+    let ytd = YoutubeDL::new(&path, args, &inline_urls.clone())
+        .map_err(|_| DownloaderError::YoutubeDlCmdNotFoundError)?;
 
     let max_tries: u8 = 5;
     for i_try in 0..max_tries {
@@ -84,7 +85,7 @@ async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), ()> {
             }
         };
     }
-    Err(())
+    Err(DownloaderError::DownloadFailedError)
 }
 
 impl Actor for DownloaderActor {
@@ -108,49 +109,51 @@ impl Handler<DownloadVideos> for DownloaderActor {
 
             let wrap_download = actix::fut::wrap_future(download_videos(msg.yt_ids));
             let mapped_download = wrap_download.map(
-                move |result: Result<(), ()>, actor: &mut DownloaderActor, _ctx| match result {
-                    Ok(()) => {
-                        yt_ids.iter().try_for_each(|yt_id| {
-                            actor.download_states.insert(yt_id.clone(), true);
+                move |result: Result<(), DownloaderError>, actor: &mut DownloaderActor, _ctx| {
+                    match result {
+                        Ok(()) => {
+                            yt_ids.iter().try_for_each(|yt_id| {
+                                actor.download_states.insert(yt_id.clone(), true);
 
-                            let path = get_video_path(yt_id);
-                            // Error while getting video path
-                            let path =
-                                path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
-                            if path.is_none() {
-                                // No video file matching this video was found
-                                return Err(DownloaderError::DowloadedVideoNotFoundError);
-                            };
-                            let path = path.unwrap();
+                                let path = get_video_path(yt_id);
+                                // Error while getting video path
+                                let path =
+                                    path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
+                                if path.is_none() {
+                                    // No video file matching this video was found
+                                    return Err(DownloaderError::DowloadedVideoNotFoundError);
+                                };
+                                let path = path.unwrap();
 
-                            crate::renderer::render_main_video(
-                                path.as_path(),
-                                crate::data::get_video_path(&yt_id.id, false).as_path(),
-                                false,
-                            )
-                            .map_err(|_| DownloaderError::RenderingError)?;
-                            crate::renderer::render_main_video(
-                                path.as_path(),
-                                crate::data::get_video_path(&yt_id.id, true).as_path(),
-                                true,
-                            )
-                            .map_err(|_| DownloaderError::RenderingError)?;
+                                crate::renderer::render_main_video(
+                                    path.as_path(),
+                                    crate::data::get_video_path(&yt_id.id, false).as_path(),
+                                    false,
+                                )
+                                .map_err(|_| DownloaderError::RenderingError)?;
+                                crate::renderer::render_main_video(
+                                    path.as_path(),
+                                    crate::data::get_video_path(&yt_id.id, true).as_path(),
+                                    true,
+                                )
+                                .map_err(|_| DownloaderError::RenderingError)?;
 
-                            let vid = Arc::new(
-                                Video::from(yt_id.clone())
-                                    .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
-                            );
-                            actor.videos.insert(yt_id.clone(), vid);
+                                let vid = Arc::new(
+                                    Video::from(yt_id.clone())
+                                        .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
+                                );
+                                actor.videos.insert(yt_id.clone(), vid);
 
-                            Ok(())
-                        })
-                    }
-                    Err(()) => {
-                        yt_ids.iter().for_each(|yt_id| {
-                            actor.download_states.remove(yt_id);
-                        });
-                        // TODO: Check which videos are correctly downloaded, and which videos are not
-                        Err(DownloaderError::DownloadFailedError)
+                                Ok(())
+                            })
+                        }
+                        Err(err) => {
+                            yt_ids.iter().for_each(|yt_id| {
+                                actor.download_states.remove(yt_id);
+                            });
+                            // TODO: Check which videos are correctly downloaded, and which videos are not
+                            Err(err)
+                        }
                     }
                 },
             );

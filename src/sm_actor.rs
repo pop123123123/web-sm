@@ -586,9 +586,10 @@ impl Handler<CreateProject> for SmActor {
 
             // unwrap is safe, because sending to a local actor can not fail
             let dl = send_download_message.await.unwrap();
-            if dl.is_err() {
-                println!("Error while downloading videos");
-                // TODO: true fallback
+            if let Err(DownloaderError::YoutubeDlCmdNotFoundError) = dl {
+                println!("Could not find youtube-dl bin");
+            } else if let Err(DownloaderError::DownloadFailedError) = dl {
+                println!("Failed to download the videos");
             }
         };
 

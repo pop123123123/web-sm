@@ -17,6 +17,7 @@ pub enum ServerError {
 
 #[derive(Debug)]
 pub enum DownloaderError {
+    YoutubeDlCmdNotFoundError,
     DownloadFailedError,
     VideosFolderNotExistError,
     DowloadedVideoNotFoundError,
