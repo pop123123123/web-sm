@@ -1,9 +1,6 @@
 use crate::data::{AmbiguityError, AnalysisId, AnalysisResult, Project, Video};
-use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
 use chashmap::CHashMap;
 use once_cell::sync::Lazy;
-use std::error::Error;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use tokio::process::Command;
 
@@ -34,9 +31,9 @@ pub async fn analyze(
         Some(result) => Ok((*result).clone()),
         None => {
             let urls = project
-                .video_urls
+                .video_ids
                 .iter()
-                .map(|v| v.url.clone())
+                .map(|yt_id| yt_id.id.clone())
                 .collect::<Vec<_>>();
             let mut command = get_command();
             let output = command

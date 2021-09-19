@@ -1,4 +1,5 @@
-use crate::data::{Phonem, PreviewId, Video};
+use crate::data::{Phonem, PreviewId, Video, YoutubeId};
+use std::sync::Arc;
 
 use ges::prelude::*;
 use gst::ClockTime;
@@ -63,10 +64,14 @@ fn render_pipeline(
 }
 
 pub fn preview(
-    videos: &[Video],
+    videos: &[Arc<Video>],
     phonems: &[Phonem],
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let id = PreviewId::from_project_sentence(videos, phonems);
+    let yt_ids = videos
+        .iter()
+        .map(|v| v.id.clone())
+        .collect::<Vec<YoutubeId>>();
+    let id = PreviewId::from_project_sentence(&yt_ids, phonems);
     let p = id.path();
     if !p.exists() {
         render_phonems(videos, &phonems, &p, true)
@@ -77,10 +82,14 @@ pub fn preview(
 }
 
 pub fn render(
-    videos: &[Video],
+    videos: &[Arc<Video>],
     phonems: &[Phonem],
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    let id = PreviewId::from_project_sentence(videos, phonems);
+    let yt_ids = videos
+        .iter()
+        .map(|v| v.id.clone())
+        .collect::<Vec<YoutubeId>>();
+    let id = PreviewId::from_project_sentence(&yt_ids, phonems);
     let p = id.render_path();
     if !p.exists() {
         render_phonems(videos, &phonems, &p, false)
@@ -91,12 +100,12 @@ pub fn render(
 }
 
 fn render_phonems(
-    videos: &[Video],
+    videos: &[Arc<Video>],
     phonems: &[Phonem],
     out_path: &std::path::Path,
     small: bool,
 ) -> BoxResult {
-    ges::init()?;
+    ges::init()?; // TODO: peut etre l'enlever ?
 
     let uri = format!("file://{}", out_path.to_str().unwrap());
 
@@ -121,20 +130,7 @@ fn render_phonems(
 
     let assets: Vec<_> = videos
         .iter()
-        .map(|v| {
-            // TODO async
-            ges::UriClipAsset::request_sync(&format!(
-                "file://{}",
-                (if small {
-                    v.get_path_small()
-                } else {
-                    v.get_path_full_resolution()
-                })
-                .to_str()
-                .unwrap()
-            ))
-            .unwrap()
-        })
+        .map(|v| if small { &v.lite_asset } else { &v.asset })
         .collect(); // TODO once per project
 
     phonems.iter().try_fold(
@@ -142,7 +138,7 @@ fn render_phonems(
         |timeline_start_ms: u64, e: &Phonem| -> Result<u64, Box<dyn std::error::Error>> {
             let start_ms = (e.start * 1000.0).round() as u64;
             let duration_ms = ((e.end - e.start) * 1000.0).round() as u64;
-            let asset = &assets[e.video_index as usize];
+            let asset = assets[e.video_index as usize];
             // let clip = layer.add_asset(
             layer.add_asset(
                 asset,

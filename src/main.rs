@@ -1,6 +1,7 @@
 use actix::*;
 use actix_files::{Files, NamedFile};
 use actix_web::{dev, get, middleware, App, HttpResponse, HttpServer, Responder};
+use std::sync::Arc;
 
 mod data;
 mod downloader;
@@ -22,8 +23,11 @@ async fn test() -> impl Responder {
     match res {
         Ok(analysis_results) => {
             let phs = &analysis_results[0];
-            // let res = crate::renderer::render(&p.video_urls, phs);
-            let res = crate::renderer::preview(&p.video_urls, phs);
+            // let res = crate::renderer::render(&p.video_ids, phs);
+            let vid = Arc::new(crate::data::Video::new(crate::data::YoutubeId {
+                id: "_ZZ8oyZUGn8".to_owned(),
+            }));
+            let res = crate::renderer::preview(&[vid], phs);
             res.unwrap();
             HttpResponse::Ok().json(&*analysis_results)
         }
@@ -34,6 +38,8 @@ async fn test() -> impl Responder {
 /// Run actix web server
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    ges::init().unwrap();
+
     let port = std::env::var("PORT")
         .unwrap_or_else(|_| "3333".to_string())
         .parse()
