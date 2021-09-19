@@ -51,7 +51,7 @@ impl DownloaderActor {
     }
 }
 
-async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, ()> {
+async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, Vec<String>> {
     let args = vec![Arg::new_with_arg("--output", "%(id)s")];
 
     // Align all the urls on a same string
@@ -87,7 +87,7 @@ async fn download_videos(yt_ids: Vec<String>) -> Result<Vec<String>, ()> {
             }
         };
     }
-    Err(())
+    Err(yt_ids)
 }
 
 impl Actor for DownloaderActor {
@@ -109,7 +109,7 @@ impl Handler<DownloadVideos> for DownloaderActor {
 
             let wrap_download = actix::fut::wrap_future(download_videos(msg.yt_ids));
             let mapped_download = wrap_download.map(
-                |result: Result<Vec<String>, ()>, actor: &mut DownloaderActor, _ctx| match result {
+                |result: Result<Vec<String>, Vec<String>>, actor: &mut DownloaderActor, _ctx| match result {
                     Ok(yt_ids) => {
                         yt_ids.iter().for_each(|yt_id| {
                             actor.download_states.insert(yt_id.to_owned(), true);
@@ -134,7 +134,13 @@ impl Handler<DownloadVideos> for DownloaderActor {
 
                         Ok(())
                     }
-                    Err(_e) => Err(ServerError::CommunicationError),
+                    Err(yt_ids) => {
+                        yt_ids.iter().for_each(|yt_id| {
+                            actor.download_states.remove(yt_id);
+                        });
+                        todo!("Check which videos are correctly downloaded, and which videos are not");
+                        Err(ServerError::CommunicationError)
+                    },
                 },
             );
             fut::Either::Left(mapped_download)
