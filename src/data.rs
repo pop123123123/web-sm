@@ -30,29 +30,66 @@ pub type Seed = String;
 pub type Combo = Vec<Phonem>;
 pub type AnalysisResult = Vec<Combo>;
 
-#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq)]
-#[serde(transparent)]
+#[derive(Debug)]
 pub struct Video {
-    pub url: String,
+    pub id: YoutubeId,
+    pub asset: ges::UriClipAsset,
+    pub lite_asset: ges::UriClipAsset,
+}
+
+unsafe impl Send for Video {}
+
+unsafe impl Sync for Video {}
+
+#[derive(Debug, Serialize, Deserialize, Hash, Clone, Eq, PartialEq, Default)]
+pub struct YoutubeId {
+    pub id: String,
+}
+
+impl YoutubeId {
+    pub fn new(url: String) -> Self {
+        // TODO: Parse url
+        YoutubeId { id: url }
+    }
 }
 
 const VIDEO_PATH: &str = ".videos/";
 
+pub fn get_video_path(yt_id: &str, small: bool) -> std::path::PathBuf {
+    let mut p = std::path::PathBuf::from(VIDEO_PATH);
+    p.push(if small {
+        format!("{}_small", yt_id)
+    } else {
+        yt_id.to_owned()
+    });
+    p.set_extension("mp4");
+    let pwd = std::env::current_dir().unwrap();
+    pwd.join(p)
+}
+
 impl Video {
+    pub fn new(id: YoutubeId) -> Self {
+        let in_path = get_video_path(&id.id, false);
+        let in_uri = format!("file://{}", in_path.to_str().unwrap());
+        let asset = ges::UriClipAsset::request_sync(&in_uri).unwrap();
+
+        let in_path = get_video_path(&id.id, true);
+        let in_uri = format!("file://{}", in_path.to_str().unwrap());
+        let lite_asset = ges::UriClipAsset::request_sync(&in_uri).unwrap();
+
+        Video {
+            id,
+            asset,
+            lite_asset,
+        }
+    }
+
     pub fn get_path_full_resolution(&self) -> std::path::PathBuf {
-        let mut p = std::path::PathBuf::from(VIDEO_PATH);
-        p.push(&self.url);
-        p.set_extension("mp4");
-        let pwd = std::env::current_dir().unwrap();
-        pwd.join(p)
+        get_video_path(&self.id.id, false)
     }
 
     pub fn get_path_small(&self) -> std::path::PathBuf {
-        let mut p = std::path::PathBuf::from(VIDEO_PATH);
-        p.push(format!("{}_small", self.url));
-        p.set_extension("mp4");
-        let pwd = std::env::current_dir().unwrap();
-        pwd.join(p)
+        get_video_path(&self.id.id, true)
     }
 }
 
@@ -60,7 +97,7 @@ impl Video {
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub seed: Seed,
-    pub video_urls: Vec<Video>,
+    pub video_ids: Vec<YoutubeId>,
     pub name: ProjectId,
     #[serde(skip_serializing)]
     pub segments: Vec<Segment>,
@@ -68,7 +105,7 @@ pub struct Project {
 
 impl PartialEq for Project {
     fn eq(&self, other: &Self) -> bool {
-        self.seed == other.seed && self.video_urls == other.video_urls
+        self.seed == other.seed && self.video_ids == other.video_ids
     }
 }
 
@@ -89,20 +126,14 @@ impl Segment {
     }
 }
 
-fn transform_url(url: &str) -> &str {
-    url
-}
-
 impl Project {
     pub fn new(name: &str, seed: &str, video_urls: &[String]) -> Self {
         Project {
             name: name.to_owned(),
             seed: seed.to_owned(),
-            video_urls: video_urls
+            video_ids: video_urls
                 .iter()
-                .map(|u| Video {
-                    url: transform_url(u).to_owned(),
-                })
+                .map(|u| YoutubeId::new(u.clone()))
                 .collect(),
             segments: Default::default(),
         }
@@ -116,9 +147,9 @@ impl AnalysisId {
         AnalysisId(
             project.seed.clone(),
             project
-                .video_urls
+                .video_ids
                 .iter()
-                .map(|s| &*s.url)
+                .map(|s| &*s.id)
                 .collect::<Vec<&str>>()
                 .join(""),
             sentence.to_owned(),
@@ -132,11 +163,11 @@ const RENDER_FOLDER: &str = ".render";
 #[derive(Debug, PartialEq, Hash)]
 pub struct PreviewId<'a>(String, &'a [Phonem]);
 impl<'a> PreviewId<'a> {
-    pub fn from_project_sentence(videos: &'a [Video], phonems: &'a [Phonem]) -> Self {
+    pub fn from_project_sentence(yt_ids: &'a [YoutubeId], phonems: &'a [Phonem]) -> Self {
         Self(
-            videos
+            yt_ids
                 .iter()
-                .map(|s| &*s.url)
+                .map(|s| &*s.id)
                 .collect::<Vec<&str>>()
                 .join(""),
             phonems,
@@ -167,7 +198,7 @@ impl<'a> PreviewId<'a> {
 impl std::hash::Hash for Project {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.seed.hash(state);
-        self.video_urls.hash(state);
+        self.video_ids.hash(state);
     }
 }
 

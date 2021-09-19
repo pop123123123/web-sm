@@ -1,5 +1,5 @@
 use crate::data::{Project, ProjectId, Seed, Segment};
-use crate::downloader::GetVideoPath;
+use crate::downloader::GetVideos;
 use crate::error::*;
 use crate::messages::ServerRequest;
 use actix::*;
@@ -270,13 +270,13 @@ impl SmActor {
 
         let Project {
             seed,
-            video_urls,
+            video_ids,
             name,
             segments,
         } = &*self.projects[&project_name];
         let request_user_change_server = ServerRequest::ChangeProject {
             seed: (*seed).clone(),
-            video_urls: (*video_urls).clone(),
+            video_urls: (*video_ids).clone(),
             name: (*name).clone(),
             segments: (*segments).clone(),
         };
@@ -470,7 +470,7 @@ impl Handler<CreateProject> for SmActor {
         println!("New project: {} {} {:?}", project_name, seed, urls);
         let project = self.create_project(project_name.clone(), seed, &urls)?;
 
-        let project_videos = project.video_urls.to_vec();
+        let project_yt_ids = project.video_ids.to_vec();
 
         let all_recipients = self.get_all_recipients();
 
@@ -486,11 +486,9 @@ impl Handler<CreateProject> for SmActor {
         let all_recipients_except =
             self.get_all_cloned_recipients_project_except(&project_name, id);
 
-        let yt_ids: Vec<String> = project_videos
-            .iter()
-            .map(|video| video.url.clone())
-            .collect();
-        let msg = crate::downloader::DownloadVideos { yt_ids };
+        let msg = crate::downloader::DownloadVideos {
+            yt_ids: project_yt_ids,
+        };
         let send_download_message = self.downloader.send(msg);
 
         let fut = async move {
@@ -507,7 +505,7 @@ impl Handler<CreateProject> for SmActor {
             )
             .await;
 
-            send_download_message.await;
+            send_download_message.await.unwrap().unwrap();
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
@@ -616,6 +614,10 @@ impl Handler<CreateSegment> for SmActor {
         let segment = clone_segment!(self, project_name, position);
         let project = clone_project!(self, project_name);
 
+        let fut_videos = self.downloader.send(GetVideos {
+            yt_ids: project.video_ids.clone(),
+        });
+
         let fut = async move {
             // Send the notification to all involved sessions
             broadcast(request, &recipients).await;
@@ -625,11 +627,11 @@ impl Handler<CreateSegment> for SmActor {
                 let res = sm::analyze(&project, &segment_sentence).await;
 
                 let combos = res.unwrap();
+
+                let videos = fut_videos.await.unwrap().unwrap();
+
                 // TODO: run n first previews
-                let res = crate::renderer::preview(
-                    &project.video_urls,
-                    &combos[segment.combo_index as usize],
-                );
+                let res = crate::renderer::preview(&videos, &combos[segment.combo_index as usize]);
                 let path = res.unwrap();
 
                 let bytes = async_fs::read(path).await.unwrap();
@@ -677,10 +679,9 @@ impl Handler<ModifySegmentSentence> for SmActor {
         let segment = clone_segment!(self, project_name, segment_position);
         let project = clone_project!(self, project_name);
 
-        let msg = GetVideoPath {
-            yt_ids: project.video_urls.iter().map(|v| v.url.clone()).collect(),
-        };
-        let get_video_future = self.downloader.send(msg);
+        let fut_videos = self.downloader.send(GetVideos {
+            yt_ids: project.video_ids.clone(),
+        });
 
         let fut = async move {
             // Send the notification to all involved sessions
@@ -689,10 +690,12 @@ impl Handler<ModifySegmentSentence> for SmActor {
 
             let combos = res.unwrap();
 
-            if get_video_future.await.is_ok() {
+            let videos = fut_videos.await;
+
+            if videos.is_ok() {
                 // TODO: run n first previews
                 let res = crate::renderer::preview(
-                    &project.video_urls,
+                    &videos.unwrap().unwrap(),
                     &combos[segment.combo_index as usize],
                 );
                 let path = res.unwrap();
@@ -742,17 +745,21 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
         let segment = clone_segment!(self, project_name, segment_position);
         let project = clone_project!(self, project_name);
 
+        let fut_videos = self.downloader.send(GetVideos {
+            yt_ids: project.video_ids.clone(),
+        });
+
         let fut = async move {
             broadcast(request, &recipients).await;
 
             // Prepare preview and sends it
             let res = sm::analyze(&project, &segment.sentence).await;
             let combos = res.unwrap();
+
+            let videos = fut_videos.await.unwrap().unwrap();
+
             // TODO: run n first previews
-            let res = crate::renderer::preview(
-                &project.video_urls,
-                &combos[segment.combo_index as usize],
-            );
+            let res = crate::renderer::preview(&videos, &combos[segment.combo_index as usize]);
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
@@ -813,6 +820,10 @@ impl Handler<Export> for SmActor {
 
         let project = clone_project!(self, project_name);
 
+        let fut_videos = self.downloader.send(GetVideos {
+            yt_ids: project.video_ids.clone(),
+        });
+
         let fut = async move {
             // Prepare preview and sends it
             let analysis = project
@@ -833,7 +844,8 @@ impl Handler<Export> for SmActor {
                 .flatten()
                 .collect();
 
-            let res = crate::renderer::render(&project.video_urls, &combos);
+            let videos = fut_videos.await.unwrap().unwrap();
+            let res = crate::renderer::render(&videos, &combos);
             let path = res.unwrap();
 
             let bytes = async_fs::read(path).await.unwrap();
