@@ -24,6 +24,49 @@ macro_rules! clone_segment {
     }};
 }
 
+macro_rules! async_run_preview {
+    ($request:expr, $recipients:expr, $project:expr, $segment:expr, $fut_videos: expr) => {
+        async move {
+            broadcast($request, &$recipients).await;
+
+            // Prepare preview and sends it
+            let res = sm::analyze(&$project, &$segment.sentence).await;
+            let combos = res.unwrap();
+
+            let videos = $fut_videos.await.unwrap().unwrap();
+
+            // TODO: run n first previews
+            let res = crate::renderer::preview(&videos, &combos[$segment.combo_index as usize]);
+            let path = res.unwrap();
+
+            let bytes = async_fs::read(path).await.unwrap();
+
+            let decoder = base64::encode(bytes);
+            let data = decoder.to_owned();
+            let r = ServerRequest::Preview {
+                segment: $segment,
+                data,
+            };
+            broadcast(r, &$recipients).await;
+        }
+    };
+}
+
+macro_rules! send_broadcast_async_preview {
+    ($self:expr, $project_name: expr, $segment_position: expr, $request: expr) => {{
+        let recipients = $self.get_all_cloned_recipients_project(&$project_name);
+
+        let segment = clone_segment!($self, $project_name, $segment_position);
+        let project = clone_project!($self, $project_name);
+
+        let fut_videos = $self.downloader.send(GetVideos {
+            yt_ids: project.video_ids.clone(),
+        });
+
+        async_run_preview!($request, recipients, project, segment, fut_videos)
+    }};
+}
+
 /// Chat server sends this messages to session
 #[derive(Message, Clone)]
 #[rtype(result = "()")]
@@ -673,44 +716,7 @@ impl Handler<ModifySegmentSentence> for SmActor {
             Err(e) => return Err(e),
         };
 
-        // Get the list of the sessions linked to the project
-        let recipients = self.get_all_cloned_recipients_project(&project_name);
-
-        let segment = clone_segment!(self, project_name, segment_position);
-        let project = clone_project!(self, project_name);
-
-        let fut_videos = self.downloader.send(GetVideos {
-            yt_ids: project.video_ids.clone(),
-        });
-
-        let fut = async move {
-            // Send the notification to all involved sessions
-            broadcast(request, &recipients).await;
-            let res = sm::analyze(&project, &new_sentence).await;
-
-            let combos = res.unwrap();
-
-            let videos = fut_videos.await;
-
-            if videos.is_ok() {
-                // TODO: run n first previews
-                let res = crate::renderer::preview(
-                    &videos.unwrap().unwrap(),
-                    &combos[segment.combo_index as usize],
-                );
-                let path = res.unwrap();
-
-                let bytes = async_fs::read(path).await.unwrap();
-
-                let decoder = base64::encode(bytes);
-                let data = decoder.to_owned();
-                let r = ServerRequest::Preview { segment, data };
-                broadcast(r, &recipients).await;
-            } else {
-                todo!("Check error code, and maybe re-download videos")
-            }
-        };
-
+        let fut = send_broadcast_async_preview!(self, project_name, segment_position, request);
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
@@ -739,37 +745,7 @@ impl Handler<ModifySegmentComboIndex> for SmActor {
             Err(e) => return Err(e),
         };
 
-        // Get the list of the sessions linked to the project
-        let recipients = self.get_all_cloned_recipients_project(&project_name);
-
-        let segment = clone_segment!(self, project_name, segment_position);
-        let project = clone_project!(self, project_name);
-
-        let fut_videos = self.downloader.send(GetVideos {
-            yt_ids: project.video_ids.clone(),
-        });
-
-        let fut = async move {
-            broadcast(request, &recipients).await;
-
-            // Prepare preview and sends it
-            let res = sm::analyze(&project, &segment.sentence).await;
-            let combos = res.unwrap();
-
-            let videos = fut_videos.await.unwrap().unwrap();
-
-            // TODO: run n first previews
-            let res = crate::renderer::preview(&videos, &combos[segment.combo_index as usize]);
-            let path = res.unwrap();
-
-            let bytes = async_fs::read(path).await.unwrap();
-
-            let decoder = base64::encode(bytes);
-            let data = decoder.to_owned();
-            let r = ServerRequest::Preview { segment, data };
-            broadcast(r, &recipients).await;
-        };
-
+        let fut = send_broadcast_async_preview!(self, project_name, segment_position, request);
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
