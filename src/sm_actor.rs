@@ -35,7 +35,7 @@ macro_rules! async_run_preview {
                     Ok(combos) => {
                         let videos = $fut_videos.await;
                         if videos.is_ok() {
-                            // If not, mailboox is full and we should just ignore this
+                            // If not, mailbox is full and we should just ignore this
                             let videos = videos.unwrap();
 
                             match videos {
@@ -58,27 +58,28 @@ macro_rules! async_run_preview {
                                                     };
                                                     broadcast(r, &$recipients).await;
                                                 }
-                                                Err(err) => {
-                                                    // TODO: cannot find the preview in filesystem
-                                                    // We should probably re-compute the preview
+                                                Err(_) => {
+                                                    println!("Cannot find preview in filesystem");
+                                                    // TODO: We should probably re-compute the preview
                                                 }
                                             }
                                         }
-                                        Err(err) => {
-                                            // TODO: fail from the preview
-                                            // We should probably retry
+                                        Err(_) => {
+                                            println!("Error while generating the preview");
+                                            // TODO: We should probably retry
                                         }
                                     }
                                 }
-                                Err(err) => {
-                                    // TODO: videos are getting downloaded
-                                    // We should just ignore and wait
+                                Err(_) => {
+                                    println!("Video downloading is pending, cannot generate the preview yet");
+                                    // TODO: We should just ignore and wait
                                     // Maybe send a message to the client to notify that
                                 }
                             }
                         }
                     }
                     Err(ambiguity) => {
+                        println!("{} triggered ambiguity error", ambiguity.word);
                         // TODO: send error back to client
                     }
                 }
@@ -583,13 +584,11 @@ impl Handler<CreateProject> for SmActor {
             )
             .await;
 
-            let res_dl = send_download_message.await;
-            if res_dl.is_ok() {
-                let res_dl = res_dl.unwrap();
-
-                if res_dl.is_err() {
-                    // TODO: true fallback
-                }
+            // unwrap is safe, because sending to a local actor can not fail
+            let dl = send_download_message.await.unwrap();
+            if dl.is_err() {
+                println!("Error while downloading videos");
+                // TODO: true fallback
             }
         };
 
@@ -857,25 +856,28 @@ impl Handler<Export> for SmActor {
                                             broadcast(r, &recipients).await;
                                         }
                                         Err(_) => {
-                                            // TODO: cannot find the rendered video in filesystem
-                                            // We should notify the user
+                                            println!("Cannot find preview in filesystem");
+                                            // TODO: We should notify the user
                                         }
                                     };
                                 }
                                 Err(_) => {
-                                    // TODO: error while rendering the video
-                                    // We should notify the user
+                                    println!("Error while generating the preview");
+                                    // TODO: We should notify the user
                                 }
                             };
                         }
                         Err(_) => {
-                            // TODO: videos are getting downloaded
-                            // We should just ignore and wait
+                            println!(
+                                "Video downloading is pending, cannot generate the preview yet"
+                            );
+                            // TODO: We should just ignore and wait
                             // Maybe send a message to the client to notify that
                         }
                     };
                 }
                 Err(_) => {
+                    println!("Mailbox full. Cannot export");
                     // TODO: mailbox full. What should we do ?
                 }
             }
