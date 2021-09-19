@@ -221,3 +221,10 @@ impl std::fmt::Display for AmbiguityError {
 }
 
 impl std::error::Error for AmbiguityError {}
+
+#[derive(Serialize)]
+pub struct Preview {
+    pub data: String,
+    #[serde(flatten)]
+    pub segment: Segment,
+}

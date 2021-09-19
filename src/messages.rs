@@ -1,4 +1,4 @@
-use crate::data::{Project, ProjectId, Seed, Segment, YoutubeId};
+use crate::data::{Project, ProjectId, Seed, Segment, YoutubeId, Preview};
 use serde::{Deserialize, Serialize};
 
 use crate::sm_actor;
@@ -32,6 +32,9 @@ pub enum ServerRequest {
         data: String,
         #[serde(flatten)]
         segment: Segment,
+    },
+    Previews {
+        previews: Vec<Preview>,
     },
     #[serde(rename_all = "camelCase")]
     ChangeProject {

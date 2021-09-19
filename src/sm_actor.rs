@@ -1,4 +1,5 @@
-use crate::data::{Project, ProjectId, Seed, Segment};
+use crate::data::PreviewId;
+use crate::data::{Project, ProjectId, Seed, Segment, Preview};
 use crate::downloader::GetVideos;
 use crate::error::*;
 use crate::messages::ServerRequest;
@@ -667,17 +668,72 @@ impl Handler<JoinProject> for SmActor {
 
         let user_recipient_clone = self.sessions[&id].clone();
         let all_recipients_except =
-            self.get_all_cloned_recipients_project_except(&project_name, id);
+            self.get_all_cloned_recipients_project_except(&project_name.clone(), id);
 
+        let project = clone_project!(self, project_name.clone());
+
+        let previews_fut: Vec<_> = project
+            .segments
+            .iter()
+            .map(|segment| {
+                let project = project.clone();
+                let segment = segment.clone();
+                async move {
+                    let combos = sm::analyze(&project, &segment.sentence).await;
+                    if let Err(_) = combos {
+                        return None;
+                    }
+                    let combos = combos.unwrap();
+
+                    let preview = PreviewId::from_project_sentence(
+                        &project.video_ids,
+                        &combos[segment.combo_index as usize],
+                    );
+                    let path = preview.path();
+
+                    let bytes = async_fs::read(path).await;
+                    if let Err(_) = bytes {
+                        return None;
+                    }
+                    let bytes = bytes.unwrap();
+
+                    let decoder = base64::encode(bytes);
+                    let data = decoder;
+
+                    Some(Preview {
+                        data: data,
+                        segment: segment,
+                    })
+                }
+            })
+            .collect();
         let fut = async move {
             user_join_project_async(
                 request_joined_users,
                 request_user_change_server,
                 request_notify_join,
-                user_recipient_clone,
+                user_recipient_clone.clone(),
                 all_recipients_except,
             )
             .await;
+
+            let all_previews = futures::future::join_all(previews_fut).await;
+            let all_previews = all_previews
+                .into_iter()
+                .filter(|preview| (*preview).is_some())
+                .map(|preview| preview.unwrap())
+                .collect::<Vec<_>>();
+
+            let r = ServerRequest::Previews {
+                previews: all_previews,
+            };
+            if user_recipient_clone
+                .send(SmMessage::from(&r))
+                .await
+                .is_err()
+            {
+                println!("All previews message not properly sent");
+            }
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);
