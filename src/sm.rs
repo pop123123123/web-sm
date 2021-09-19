@@ -46,12 +46,14 @@ pub async fn analyze(
 
             let err_data = output.stderr;
             let out_data = output.stdout;
-            let first = out_data[..(out_data.len() - 1)]
-                .iter()
-                .rposition(|x| *x == 0xa)
-                .unwrap_or(0);
+            let end = if out_data.len() > 0 {
+                out_data.len() - 1
+            } else {
+                0
+            };
+            let start = out_data[..end].iter().rposition(|x| *x == 0xa).unwrap_or(0);
             let res: serde_json::Result<AnalysisResult> =
-                serde_json::from_slice(&out_data[first..]);
+                serde_json::from_slice(&out_data[start..]);
             let res = res.map(|res| {
                 let boxed = Arc::new(res);
                 add_in_cache(hash_key, boxed.clone());
