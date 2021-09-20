@@ -239,6 +239,15 @@ impl actix::Message for Export {
     type Result = Result<(), ServerError>;
 }
 
+/// Load a project
+#[derive(Deserialize)]
+pub struct Load {
+    pub project: Project,
+}
+impl actix::Message for Load {
+    type Result = Result<(), ServerError>;
+}
+
 pub struct SmActor {
     sessions: HashMap<SessionId, Recipient<SmMessage>>,
     projects: HashMap<ProjectId, Box<Project>>,
@@ -958,6 +967,32 @@ impl Handler<Export> for SmActor {
             broadcast(r, &recipients).await;
         };
 
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
+
+        Ok(())
+    }
+}
+
+// Load a project
+impl Handler<Load> for SmActor {
+    type Result = Result<(), ServerError>;
+
+    fn handle(&mut self, msg: Load, ctx: &mut Context<Self>) -> Self::Result {
+        if self.projects.contains_key(&msg.project.name) {
+            return Err(ServerError::ProjectAlreadyExists);
+        }
+        self.projects
+            .insert(msg.project.name.clone(), Box::new(msg.project.clone()));
+
+        let new_project_request = ServerRequest::NewProject {
+            project: msg.project,
+        };
+
+        let all_recipients = self.get_all_recipients();
+        let fut = async move {
+            broadcast(new_project_request, &all_recipients).await;
+        };
         let fut = actix::fut::wrap_future::<_, Self>(fut);
         ctx.spawn(fut);
 
