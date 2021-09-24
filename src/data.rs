@@ -228,3 +228,10 @@ pub struct Preview {
     #[serde(flatten)]
     pub segment: Segment,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum DownloadStatus {
+    DownloadStarted,
+    ProcessingStarted,
+    Done,
+}

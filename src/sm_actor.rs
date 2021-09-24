@@ -1,5 +1,5 @@
 use crate::data::PreviewId;
-use crate::data::{Preview, Project, ProjectId, Seed, Segment};
+use crate::data::{Preview, Project, ProjectId, Seed, Segment, DownloadStatus};
 use crate::downloader::GetVideos;
 use crate::error::*;
 use crate::messages::ServerRequest;
@@ -588,6 +588,8 @@ impl Handler<CreateProject> for SmActor {
 
         let msg = crate::downloader::DownloadVideos {
             yt_ids: project_yt_ids,
+            project_id: project_name,
+            addr: ctx.address(),
         };
         let send_download_message = self.downloader.send(msg);
 
@@ -997,5 +999,33 @@ impl Handler<Load> for SmActor {
         ctx.spawn(fut);
 
         Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+pub struct DownloadStatusUpdate {
+    pub status: DownloadStatus,
+    pub project_id: ProjectId,
+}
+impl actix::Message for DownloadStatusUpdate {
+    type Result = ();
+}
+
+impl Handler<DownloadStatusUpdate> for SmActor {
+    type Result = ();
+
+    fn handle(&mut self, msg: DownloadStatusUpdate, ctx: &mut Context<Self>) -> Self::Result {
+        println!("{:?}", msg.status);
+        let request = crate::messages::ServerRequest::UpdateDownloadStatus{
+            status: msg.status,
+            project_id: msg.project_id.clone(),
+        };
+        let recipients = self.get_all_cloned_recipients_project(&msg.project_id);
+
+        let fut = async move {
+            broadcast(request, &recipients).await;
+        };
+        let fut = actix::fut::wrap_future::<_, Self>(fut);
+        ctx.spawn(fut);
     }
 }

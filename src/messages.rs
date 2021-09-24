@@ -1,4 +1,4 @@
-use crate::data::{Preview, Project, ProjectId, Seed, Segment, YoutubeId};
+use crate::data::{Preview, Project, ProjectId, Seed, Segment, YoutubeId, DownloadStatus};
 use serde::{Deserialize, Serialize};
 
 use crate::sm_actor;
@@ -80,5 +80,9 @@ pub enum ServerRequest {
     AmbiguityToken {
         row: usize,
         token: String,
+    },
+    UpdateDownloadStatus {
+        status: DownloadStatus,
+        project_id: ProjectId,
     },
 }

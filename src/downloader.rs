@@ -1,6 +1,7 @@
-use crate::data::{Video, YoutubeId};
+use crate::data::{Video, YoutubeId, ProjectId};
 use crate::error::*;
 use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
+use crate::sm_actor::{SmActor, DownloadStatusUpdate};
 use actix::*;
 use regex::Regex;
 use serde::Deserialize;
@@ -10,10 +11,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec::Vec;
 
-#[derive(Deserialize)]
 pub struct DownloadVideos {
-    #[serde(skip)]
     pub yt_ids: Vec<YoutubeId>,
+    pub project_id: ProjectId,
+    pub addr: Addr<SmActor>,
 }
 impl actix::Message for DownloadVideos {
     type Result = Result<(), DownloaderError>;
@@ -86,6 +87,21 @@ impl Actor for DownloaderActor {
     type Context = Context<Self>;
 }
 
+macro_rules! ad_hoc_download_state_update {
+    ($status:expr, $project_id:expr) => {
+        DownloadStatusUpdate {
+            status: $status,
+            project_id: $project_id.clone(),
+        }
+    };
+}
+
+macro_rules! send_ad_hoc_download_state_update {
+    ($addr:expr, $status:expr, $project_id:expr) => {
+        $addr.do_send(ad_hoc_download_state_update!($status, $project_id));
+    };
+}
+
 impl Handler<DownloadVideos> for DownloaderActor {
     type Result = ResponseActFuture<Self, Result<(), DownloaderError>>;
 
@@ -101,11 +117,27 @@ impl Handler<DownloadVideos> for DownloaderActor {
 
             let yt_ids = msg.yt_ids.clone();
 
+            let project_id = msg.project_id;
+
+            let addr = msg.addr.clone();
+
+            send_ad_hoc_download_state_update!(addr, crate::data::DownloadStatus::DownloadStarted, project_id);
+
             let wrap_download = actix::fut::wrap_future(download_videos(msg.yt_ids));
             let mapped_download = wrap_download.map(
-                move |result: Result<(), DownloaderError>, actor: &mut DownloaderActor, _ctx| {
+                move |result: Result<(), DownloaderError>, actor: &mut DownloaderActor, ctx: &mut Context<Self>| {
                     match result {
                         Ok(()) => {
+
+                            // Not working: the gstreamer rendering blocks the sending of message
+                            let addr_clone = addr.clone();
+                            let project_id_clone = project_id.clone();
+                            let fut = async move {
+                                addr_clone.send(ad_hoc_download_state_update!(crate::data::DownloadStatus::ProcessingStarted, project_id_clone)).await;
+                            };
+                            let fut = actix::fut::wrap_future::<_, Self>(fut);
+                            ctx.spawn(fut);
+
                             yt_ids.iter().try_for_each(|yt_id| {
                                 actor.download_states.insert(yt_id.clone(), true);
 
@@ -137,6 +169,8 @@ impl Handler<DownloadVideos> for DownloaderActor {
                                         .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
                                 );
                                 actor.videos.insert(yt_id.clone(), vid);
+
+                                send_ad_hoc_download_state_update!(addr, crate::data::DownloadStatus::Done, project_id);
 
                                 Ok(())
                             })
