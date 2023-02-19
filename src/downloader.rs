@@ -1,7 +1,7 @@
 use crate::data::{Video, YoutubeId};
 use crate::error::*;
-use crate::youtube_dl::{Arg, ResultType, YoutubeDL};
 use actix::*;
+use futures::future::Either;
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::vec::Vec;
+use youtube_dl::YoutubeDl;
 
 #[derive(Deserialize)]
 pub struct DownloadVideos {
@@ -49,37 +50,36 @@ impl DownloaderActor {
 }
 
 async fn download_videos(yt_ids: Vec<YoutubeId>) -> Result<(), DownloaderError> {
-    let args = vec![Arg::new_with_arg("--output", "%(id)s")];
-
-    // Align all the urls on a same string
-    let urls: Vec<_> = yt_ids.into_iter().map(|yt_id| yt_id.id).collect();
-
-    let path = PathBuf::from("./.videos");
-    let ytd = YoutubeDL::new_multiple_links(&path, args, urls.clone())
-        .map_err(|_| DownloaderError::YoutubeDlCmdNotFoundError)?;
-
-    let max_tries: u8 = 5;
-    for i_try in 0..max_tries {
-        println!("Downloading videos {:?}. Try {}", urls, i_try);
-
-        // start download
-        let download = ytd.download().await;
+    for ytid in yt_ids.iter() {
+        let output = YoutubeDl::new(&ytid.id)
+            .output_template("%(id)s")
+            .output_directory("./.videos")
+            .format("bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4")
+            .download(true)
+            .socket_timeout("15")
+            .run_async()
+            .await;
 
         // check what the result is and print out the path to the download or the error
-        match download.result_type() {
-            ResultType::SUCCESS => {
-                println!(
-                    "Videos downloaded: {}",
-                    download.output_dir().to_string_lossy()
-                );
-                return Ok(());
+        match output {
+            Ok(download) => {
+                let video = download.into_single_video();
+                match video {
+                    None => return Err(DownloaderError::DownloadFailedError),
+                    Some(video) => {
+                        // println!("Video downloaded: {}", video.location.unwrap());
+                        // println!("Video downloaded: {:?}", video);
+                        println!("Video downloaded: {}", ytid.id);
+                    }
+                }
             }
-            ResultType::IOERROR | ResultType::FAILURE => {
-                println!("Couldn't start download: {}", download.output())
+            Err(error) => {
+                println!("yt-dlp error: {}", error);
+                return Err(DownloaderError::DownloadFailedError);
             }
         };
     }
-    Err(DownloaderError::DownloadFailedError)
+    Ok(())
 }
 
 impl Actor for DownloaderActor {
@@ -106,18 +106,24 @@ impl Handler<DownloadVideos> for DownloaderActor {
                 move |result: Result<(), DownloaderError>, actor: &mut DownloaderActor, _ctx| {
                     match result {
                         Ok(()) => {
+                            println!("nik sa baise");
                             yt_ids.iter().try_for_each(|yt_id| {
                                 actor.download_states.insert(yt_id.clone(), true);
+                                println!("id: {}", yt_id.id);
+                                dbg!(&actor.download_states);
 
                                 let path = get_video_path(yt_id);
+                                dbg!(&path);
                                 // Error while getting video path
                                 let path =
                                     path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
+                                dbg!(&path);
                                 if path.is_none() {
                                     // No video file matching this video was found
                                     return Err(DownloaderError::DowloadedVideoNotFoundError);
                                 };
                                 let path = path.unwrap();
+                                dbg!(&path);
 
                                 crate::renderer::render_main_video(
                                     path.as_path(),
@@ -142,6 +148,7 @@ impl Handler<DownloadVideos> for DownloaderActor {
                             })
                         }
                         Err(err) => {
+                            println!("nik sa rase");
                             yt_ids.iter().for_each(|yt_id| {
                                 actor.download_states.remove(yt_id);
                             });
@@ -151,9 +158,9 @@ impl Handler<DownloadVideos> for DownloaderActor {
                     }
                 },
             );
-            fut::Either::Left(mapped_download)
+            Either::Left(mapped_download)
         } else {
-            fut::Either::Right(actix::fut::wrap_future(async { Ok(()) }))
+            Either::Right(actix::fut::wrap_future(async { Ok(()) }))
         };
         Box::pin(wrap_fut)
     }

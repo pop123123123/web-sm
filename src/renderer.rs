@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use ges::prelude::*;
 use gst::ClockTime;
-use gst_pbutils::{
-    EncodingAudioProfileBuilder, EncodingContainerProfileBuilder, EncodingVideoProfileBuilder,
-};
+use gst_pbutils::{EncodingAudioProfile, EncodingContainerProfile, EncodingVideoProfile};
 
 type BoxResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -14,24 +12,21 @@ fn render_pipeline(
     out_uri: &str,
     out_caps: Option<&gst::Caps>,
 ) -> BoxResult {
-    let audio_profile = EncodingAudioProfileBuilder::new()
-        .format(&gst::Caps::new_simple("audio/mpeg", &[]))
-        .presence(0)
-        .build()?;
+    let audio_profile =
+        EncodingAudioProfile::builder(&gst::Caps::new_simple("audio/mpeg", &[])).build();
 
     // Every videostream piped into the encodebin should be encoded using vp9.
-    let video_profile = EncodingVideoProfileBuilder::new()
-        .format(out_caps.unwrap_or(&gst::Caps::new_simple("video/x-h264", &[])))
-        .presence(0)
-        .build()?;
+    let video_profile = EncodingVideoProfile::builder(
+        out_caps.unwrap_or(&gst::Caps::new_simple("video/x-h264", &[])),
+    )
+    .build();
 
-    // All streams are then finally combined into a mp4 container.
-    let container_profile = EncodingContainerProfileBuilder::new()
-        .name("container")
-        .format(&gst::Caps::new_simple("video/quicktime", &[]))
-        .add_profile(&(video_profile))
-        .add_profile(&(audio_profile))
-        .build()?;
+    let container_profile =
+        EncodingContainerProfile::builder(&gst::Caps::new_simple("video/quicktime", &[]))
+            .name("container")
+            .add_profile(video_profile)
+            .add_profile(audio_profile)
+            .build();
 
     pipeline.set_render_settings(out_uri, &container_profile)?;
 
@@ -120,9 +115,9 @@ fn render_phonems(
     let video_caps = gst::Caps::new_simple("video/x-raw", &[]);
     let audio_track = ges::Track::new(
         ges::TrackType::AUDIO,
-        &gst::Caps::new_simple("audio/x-raw", &[]),
+        gst::Caps::new_simple("audio/x-raw", &[]),
     );
-    let video_track = ges::Track::new(ges::TrackType::VIDEO, &video_caps);
+    let video_track = ges::Track::new(ges::TrackType::VIDEO, video_caps.clone());
     video_track.set_restriction_caps(&video_caps);
 
     timeline.add_track(&video_track)?;
@@ -187,9 +182,9 @@ pub fn render_main_video(
     let video_caps = gst::Caps::new_simple("video/x-raw", &[]);
     let audio_track = ges::Track::new(
         ges::TrackType::AUDIO,
-        &gst::Caps::new_simple("audio/x-raw", &[]),
+        gst::Caps::new_simple("audio/x-raw", &[]),
     );
-    let video_track = ges::Track::new(ges::TrackType::VIDEO, &video_caps);
+    let video_track = ges::Track::new(ges::TrackType::VIDEO, video_caps.clone());
     video_track.set_restriction_caps(&video_caps);
 
     timeline.add_track(&video_track)?;
