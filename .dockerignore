@@ -1,0 +1,11 @@
+front
+target
+sm-interface/.cache
+sm-interface/.downloads
+.git
+.videos
+.vscode
+.preview
+.render
+.gitignore
+.gitmodules
