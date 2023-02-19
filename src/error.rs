@@ -20,7 +20,7 @@ pub enum DownloaderError {
     YoutubeDlCmdNotFoundError,
     DownloadFailedError,
     VideosFolderNotExistError,
-    DowloadedVideoNotFoundError,
+    DownloadedVideoNotFoundError,
     RenderingError,
     BrokenRenderedVideo,
 }

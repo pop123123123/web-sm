@@ -569,7 +569,8 @@ impl Handler<CreateProject> for SmActor {
         // Creating a new project
         println!("New project: {} {} {:?}", project_name, seed, urls);
         let project = self.create_project(project_name.clone(), seed, &urls)?;
-
+        let clone_project = project.clone();
+    
         let project_yt_ids = project.video_ids.to_vec();
 
         let all_recipients = self.get_all_recipients();
@@ -587,9 +588,14 @@ impl Handler<CreateProject> for SmActor {
             self.get_all_cloned_recipients_project_except(&project_name, id);
 
         let msg = crate::downloader::DownloadVideos {
-            yt_ids: project_yt_ids,
+            yt_ids: clone_project.video_ids.to_vec(),
         };
         let send_download_message = self.downloader.send(msg);
+
+        let msg = crate::downloader::RenderDownloadedVideo {
+            yt_ids: clone_project.video_ids.to_vec(),
+        };
+        let send_render_message = self.downloader.send(msg);
 
         let fut = async move {
             // Notify all users that a project have been created
@@ -612,6 +618,20 @@ impl Handler<CreateProject> for SmActor {
             } else if let Err(DownloaderError::DownloadFailedError) = dl {
                 println!("Failed to download the videos");
             }
+            println!("DLed");
+
+            // unwrap is safe, because sending to a local actor can not fail
+            let render = send_render_message.await.unwrap();
+            if let Err(DownloaderError::VideosFolderNotExistError) = render {
+                println!("The downloaded videos' folder waas not found in filesystem")
+            } else if let Err(DownloaderError::DownloadedVideoNotFoundError) = render {
+                println!("The previously downloaded videos were not found in filesystem");
+            } else if let Err(DownloaderError::RenderingError) = render {
+                println!("Failed to render the downloaded videos");
+            } else if let Err(DownloaderError::BrokenRenderedVideo) = render {
+                println!("Videos have been rendered but output is malformed")
+            };
+            println!("Rendered");
         };
 
         let fut = actix::fut::wrap_future::<_, Self>(fut);

@@ -34,6 +34,15 @@ pub enum DownloadVideoStatus {
     DownloadPending,
 }
 
+#[derive(Deserialize)]
+pub struct RenderDownloadedVideo {
+    #[serde(skip)]
+    pub yt_ids: Vec<YoutubeId>,
+}
+impl actix::Message for RenderDownloadedVideo {
+    type Result = Result<(), DownloaderError>;
+}
+
 pub struct DownloaderActor {
     download_states: HashMap<YoutubeId, bool>,
     videos: HashMap<YoutubeId, Arc<Video>>,
@@ -90,6 +99,7 @@ impl Handler<DownloadVideos> for DownloaderActor {
     type Result = ResponseActFuture<Self, Result<(), DownloaderError>>;
 
     fn handle(&mut self, msg: DownloadVideos, _ctx: &mut Context<Self>) -> Self::Result {
+        dbg!("DL video");
         let wrap_fut = if msg
             .yt_ids
             .iter()
@@ -106,40 +116,10 @@ impl Handler<DownloadVideos> for DownloaderActor {
                 move |result: Result<(), DownloaderError>, actor: &mut DownloaderActor, _ctx| {
                     match result {
                         Ok(()) => {
-                            yt_ids.iter().try_for_each(|yt_id| {
+                            yt_ids.iter().for_each(|yt_id| {
                                 actor.download_states.insert(yt_id.clone(), true);
-
-                                let path = get_video_path(yt_id);
-                                // Error while getting video path
-                                let path =
-                                    path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
-                                if path.is_none() {
-                                    // No video file matching this video was found
-                                    return Err(DownloaderError::DowloadedVideoNotFoundError);
-                                };
-                                let path = path.unwrap();
-
-                                crate::renderer::render_main_video(
-                                    path.as_path(),
-                                    crate::data::get_video_path(&yt_id.id, false).as_path(),
-                                    false,
-                                )
-                                .map_err(|_| DownloaderError::RenderingError)?;
-                                crate::renderer::render_main_video(
-                                    path.as_path(),
-                                    crate::data::get_video_path(&yt_id.id, true).as_path(),
-                                    true,
-                                )
-                                .map_err(|_| DownloaderError::RenderingError)?;
-
-                                let vid = Arc::new(
-                                    Video::from(yt_id.clone())
-                                        .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
-                                );
-                                actor.videos.insert(yt_id.clone(), vid);
-
-                                Ok(())
-                            })
+                            });
+                            Ok(())
                         }
                         Err(err) => {
                             yt_ids.iter().for_each(|yt_id| {
@@ -159,7 +139,49 @@ impl Handler<DownloadVideos> for DownloaderActor {
     }
 }
 
+impl Handler<RenderDownloadedVideo> for DownloaderActor {
+    type Result = Result<(), DownloaderError>;
+
+    fn handle(&mut self, msg: RenderDownloadedVideo, _ctx: &mut Context<Self>) -> Self::Result {
+        dbg!("Render");
+        let yt_ids = msg.yt_ids;
+        yt_ids.iter().try_for_each(|yt_id| {
+            let path = get_video_path(yt_id);
+            // Error while getting video path
+            let path =
+                path.map_err(|_| DownloaderError::VideosFolderNotExistError)?;
+            if path.is_none() {
+                // No video file matching this video was found
+                return Err(DownloaderError::DownloadedVideoNotFoundError);
+            };
+            let path = path.unwrap();
+
+            crate::renderer::render_main_video(
+                path.as_path(),
+                crate::data::get_video_path(&yt_id.id, false).as_path(),
+                false,
+            )
+            .map_err(|_| DownloaderError::RenderingError)?;
+            crate::renderer::render_main_video(
+                path.as_path(),
+                crate::data::get_video_path(&yt_id.id, true).as_path(),
+                true,
+            )
+            .map_err(|_| DownloaderError::RenderingError)?;
+
+            let vid = Arc::new(
+                Video::from(yt_id.clone())
+                    .map_err(|_| DownloaderError::BrokenRenderedVideo)?,
+            );
+            self.videos.insert(yt_id.clone(), vid);
+
+            Ok(())
+        })
+    }
+}
+
 fn get_video_path(id: &YoutubeId) -> std::io::Result<Option<PathBuf>> {
+    dbg!("LOOOOOOOOL {:?}", id);
     let pattern = format!(r"^.*{}..*$", id.id);
     let re = Regex::new(&pattern).unwrap(); // unwrap fails if the pattern is invalid. Our pattern is static so never invalid
 
