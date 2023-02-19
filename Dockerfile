@@ -18,7 +18,7 @@ WORKDIR ${WEBSM}
 COPY . ${WEBSM}/
 
 # Install sentence-mixing
-RUN pwd && pip3 install -r sm-interface/requirements.txt
+RUN pip3 install -r sm-interface/requirements.txt
 
 # Install rust backend
 RUN cargo build --release
