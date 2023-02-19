@@ -12,6 +12,10 @@ RUN conda config --add channels conda-forge && conda install -y montreal-forced-
 # Install rust and gstreamer
 RUN apt-get install -y cargo libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
 
+# Project folder
+ARG WEBSM=/websm
+WORKDIR ${WEBSM}
+COPY . ${WEBSM}/
+
 # Install sentence-mixing
-COPY sm-interface /sm-interface
-RUN pip3 install -r sm-interface/requirements.txt
+RUN pwd && pip3 install -r sm-interface/requirements.txt
