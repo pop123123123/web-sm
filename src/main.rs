@@ -58,9 +58,11 @@ async fn main() -> std::io::Result<()> {
     // Start chat server actor
     let server = sm_actor::SmActor::new().start();
 
+    println!("Server listening on localhost:{}", port);
     HttpServer::new(move || {
         App::new()
             .wrap(middleware::Compress::default())
+            // .app_data(server.clone())
             .data(server.clone())
             .service(test)
             .service(actix_web::web::resource("/ws/").to(socket::sm_route))
@@ -70,7 +72,7 @@ async fn main() -> std::io::Result<()> {
                     .default_handler(|req: dev::ServiceRequest| {
                         let (http_req, _payload) = req.into_parts();
                         async {
-                            let response = NamedFile::open(INDEX_PATH)?.into_response(&http_req)?;
+                            let response = NamedFile::open(INDEX_PATH)?.into_response(&http_req);
                             Ok(dev::ServiceResponse::new(http_req, response))
                         }
                     }),
