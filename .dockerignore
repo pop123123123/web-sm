@@ -9,3 +9,4 @@ sm-interface/.downloads
 .render
 .gitignore
 .gitmodules
+Dockerfile
